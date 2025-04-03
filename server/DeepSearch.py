@@ -4,28 +4,22 @@ cossim = lambda a, b: torch.nn.functional.cosine_similarity(a, b, dim=0)
 
 
 class SearchNode:
-    def __init__(self, relative_to):
-        self.relative_to = relative_to
-        self.offsets = torch.empty((0, relative_to.size(-1)))
+    def __init__(self):
+        self.dim = relative_to.size(-1)
+        self.offsets = torch.empty((0, self.dim))  # what if i replace it with the changing token representations from the embeddings layer??
         self.children = []
+        self.offset_projection = torch.nn.Linear(self.dim, self.dim)
+        self.output_projection = torch.nn.Linear(self.dim, self.dim)
     
-    def update(self, offsets, embed):
-        if len(offsets) == 0:
-            return relative_to
-
-        offset = offsets[0]
+    def update(self, embed, path=[]):
+        offset = self.offset_projection(embed)
+        path.append(self.output_projection(embed))
         similarities = cossim(offset, self.offsets)
         
         if torch.max(similarities) < 0.1:
-            self.offsets = torch.cat([self.offsets, embed.unsqueeze(0)])
-            self.children.append(SearchNode(embed.size(-1), embed))  # do later if needed only
-            return relative_to
+            self.offsets = torch.cat([self.offsets, offset])
+            self.children.append(SearchNode())  # do later if needed only?
+            return path
         
-        idx = similarities.argmax()
-        self.children[idx].update(offsets[1:], embed)
-
-    def query(self, embed, path=[]):
-        path.append(self.name)
-        similarities = cossim(embed, self.offsets) 
-        idx = similarities.argmax()
-        return self.children[idx].query(embed, path)
+        idx = similarities.argmax()  # replace with softmax with like a cutoff or something for gradients. infeasable to compute all gradients.
+        self.children[idx].update(embed, path)
