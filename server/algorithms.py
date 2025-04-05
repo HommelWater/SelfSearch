@@ -2,6 +2,8 @@ import torch
 
 cossim = lambda a, b: torch.nn.functional.cosine_similarity(a.unsqueeze(0), b, dim=-1)
 
+# TODO: Parallelize queries, handle storage on disk.
+
 class SearchNode:
     def __init__(self, dim, momentum=0.1):
         self.dim = dim
@@ -60,3 +62,7 @@ class SearchNode:
         path.append(idx)
         update_mean(idx, embed)
         return self.children[idx].query(embed - self.means[idx], path)
+
+    def store(self):
+        #  Implement storing the network later. Is a fancy database really needed? Can I just store binaries for each node on the disk instead?
+        pass

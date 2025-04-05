@@ -1,9 +1,10 @@
 from flask import Flask
 from sentence_transformers import SentenceTransformer
-import os
+from algorithms import SearchNode
 
 model_string = 'all-mpnet-base-v2'
 model = SentenceTransformer('all-mpnet-base-v2').to("cuda")
+search_engine = SearchNode(model.get_sentence_embedding_dimension(), momentum=0.1)
 
 app = Flask(__name__)
 @app.route('/index', methods=['POST'])
@@ -23,18 +24,11 @@ def home():
     page = data.page
     time = data.time
 
-    if isinstance(site_embeds, int):
-        site_embeds = page_embedding
-    else:
-        site_embeds = torch.cat([site_embeds, page_embedding], dim=0)
-    sitesmap[site] = len(sites)
-    sites.append(site)
-    
-    pages.append([page])
+    clusters = search_engine.query(page_embedding)
 
     return ""
 
 # Run the server
 if __name__ == '__main__':
-    os.mkdir("./storage")
+    #os.mkdir("./storage")
     app.run(debug=True)
