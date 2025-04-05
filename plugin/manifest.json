@@ -1,23 +1,20 @@
 {
-    "manifest_version": 2,
-    "name": "Personal Search Engine",
-    "version": "1.0",
-    "description": "Collects site data for a personal search engine.",
-    "background": {
-      "scripts": ["background.js"]
-    },
-    "web_accessible_resources": ["vectormap.bin", "wordmap.json"],
-    "content_scripts": [
+  "manifest_version": 3,
+  "name": "Personal Search Engine",
+  "version": "1.0",
+  "description": "Collects site data for your personal search engine.",
+  "content_scripts": [
       {
-        "matches": ["<all_urls>"],
-        "js": ["content.js"],
-        "run_at": "document_end"
+          "matches": ["<all_urls>"],
+          "js": ["content.js"],
+          "run_at": "document_end"
       }
-    ],
-    "permissions": [
+  ],
+  "permissions": [
       "tabs",
-      "storage",
+      "storage"
+  ],
+  "host_permissions": [
       "<all_urls>"
-    ]
-  }
-  
+  ]
+}

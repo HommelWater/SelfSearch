@@ -3,38 +3,7 @@ from sentence_transformers import SentenceTransformer
 import os
 
 model_string = 'all-mpnet-base-v2'
-model = SentenceTransformer(model_string).to("cuda")
-
-class SearchNode:
-    def __init__(self, dim, name):
-        self.name = name
-        self.embeds = torch.empty((0, dim))
-        self.children = []
-        self.child_indices = {}
-    
-    def update(self, names, embed):
-        if len(names) == 0:
-            return
-
-        name = names[0]
-        if name not in self.child_indices:
-            self.child_indices[name] = len(self.children)
-            self.children.append(SearchNode(embed.size(-1)))
-            self.embeds = torch.cat([self.embeds, embed.unsqueeze(0)], dim=0)
-        self.children[self.child_indices[name]].update(names[1:], embed)
-
-    def query(self, embed, path=[]):
-        similarities = self.embeds @ embed
-        idx = similarities.argmin()
-        path.append(self.)
-        return self.children[idx].children.query(embed, path)
-
-site_embeds = 0
-sitesmap = {}
-sites = []
-page_embeds = []
-pagesmaps = []
-pages = []
+model = SentenceTransformer('all-mpnet-base-v2').to("cuda")
 
 app = Flask(__name__)
 @app.route('/index', methods=['POST'])
