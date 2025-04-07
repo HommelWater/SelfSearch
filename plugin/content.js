@@ -26,7 +26,7 @@
   // Send data to server
   async function sendData(pageData) {
       try {
-          const response = await fetch('https://your-search-engine-server.com/api/save', {
+          const response = await fetch('http://localhost:1111', {
               method: 'POST',
               headers: {
                   'Content-Type': 'application/json',
