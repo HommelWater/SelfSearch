@@ -73,10 +73,10 @@ class SearchNode:
     def query(self, embed, values=[], path=[]):
         values.extend(self.values)
         if embed.abs().sum().item() == 0.0:
-            return path
+            return values
 
         if self.means is None:
-            return path
+            return values
         similarities = cossim(embed, self.means)
         most_similar, idx = similarities.max(dim=0)
         idx = idx.item()
@@ -85,7 +85,7 @@ class SearchNode:
         alpha_dyn = similarities.quantile(0.9).item()
         if most_similar < alpha_dyn:
             path.append(idx)
-            return path
+            return values
 
         #  If its similar enough to the most similar one, update its mean position and propagate further down.
         path.append(idx)
