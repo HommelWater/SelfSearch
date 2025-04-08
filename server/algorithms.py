@@ -5,12 +5,13 @@ cossim = lambda a, b: torch.nn.functional.cosine_similarity(a.unsqueeze(0), b, d
 # TODO: Parallelize queries, handle storage on disk, prefetch next possible cluster means to gpu?.
 
 class SearchNode:
-    def __init__(self, dim, momentum=0.1):
-        self.dim = dim
+    def __init__(self, embed, value, momentum=0.1):
+        self.dim = embed.size(-1)
         self.momentum = momentum
         self.means = None
         self.children = []
         self.values = []
+        self.add_child(embed, value)
     
     def getValues(self, clusters, values=[]):
         values.extend(self.values)
@@ -30,7 +31,7 @@ class SearchNode:
         self.children[idx].update_all_means(d_mean)
 
     def add_child(self, embed, value):
-        self.children.append(SearchNode(self.dim, self.momentum))
+        self.children.append(SearchNode(embed, value, self.momentum))
         if self.means is None:
             self.means = embed.clone().unsqueeze(0)
         else:
@@ -38,15 +39,6 @@ class SearchNode:
 
     @torch.no_grad()
     def update(self, embed, value, path=[]):
-        if embed.abs().sum().item() == 0.0:
-            return path
-
-        #  Initialize if there's no clusters yet.
-        if self.means is None:
-            self.add_child(embed, value)
-            path.append(0)
-            return path
-
         similarities = cossim(embed, self.means)
         most_similar, idx = similarities.max(dim=0)
         idx = idx.item()
@@ -74,11 +66,9 @@ class SearchNode:
     @torch.no_grad()
     def query(self, embed, values=[], path=[]):
         values.extend(self.values)
-        if embed.abs().sum().item() == 0.0:
-            return path
-
         if self.means is None:
             return path
+
         similarities = cossim(embed, self.means)
         most_similar, idx = similarities.max(dim=0)
         idx = idx.item()
@@ -93,6 +83,3 @@ class SearchNode:
         path.append(idx)
         return self.children[idx].query(embed - self.means[idx], values, path)
 
-    def store(self):
-        #  Implement storing the network later. Is a fancy database really needed? Can I just store binaries for each node on the disk instead?
-        pass
