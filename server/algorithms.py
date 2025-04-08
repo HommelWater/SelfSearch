@@ -12,11 +12,13 @@ class SearchNode:
         self.children = []
         self.values = []
     
-    def getValues(clusters, values=[]):
+    def getValues(self, clusters, values=[]):
         values.extend(self.values)
+        if clusters == []: return values
         return self.children[clusters[0]].getValues(clusters[1:], values)
 
     def update_all_means(self, d_mean):
+        if self.means is None: return
         self.means += d_mean
         for child in self.children:
             child.update_all_means(d_mean)
@@ -41,7 +43,7 @@ class SearchNode:
 
         #  Initialize if there's no clusters yet.
         if self.means is None:
-            self.add_child(self, embed, value)
+            self.add_child(embed, value)
             path.append(0)
             return path
 
@@ -56,7 +58,7 @@ class SearchNode:
         #  If the most similar is not that similar, update the mean and return the path. If it's completely out there add a new node.
         if most_similar < alpha_dyn:  # might need to modify to do top k or something!
             if most_similar < beta_dyn:
-                self.add_child(self, embed, value)
+                self.add_child(embed, value)
                 path.append(len(self.children) - 1)
                 return path
             path.append(idx)
@@ -73,10 +75,10 @@ class SearchNode:
     def query(self, embed, values=[], path=[]):
         values.extend(self.values)
         if embed.abs().sum().item() == 0.0:
-            return values
+            return path
 
         if self.means is None:
-            return values
+            return path
         similarities = cossim(embed, self.means)
         most_similar, idx = similarities.max(dim=0)
         idx = idx.item()

@@ -1,5 +1,4 @@
-from flask import Flask
-from flask import render_template
+from flask import Flask, request, jsonify, render_template
 from sentence_transformers import SentenceTransformer
 from algorithms import SearchNode
 
@@ -11,20 +10,32 @@ app = Flask(__name__)
 @app.route('/index', methods=['POST'])
 def index():
     data = request.get_json()
-    embeddings = model(data["text"])
+    text = data["text"]
+    title = data["title"]
+    print(data)
+    embeddings = model.encode(text, convert_to_tensor=True)
+    embeddings = embeddings.reshape(1, -1)
+    print(embeddings.shape)
     page_embedding = embeddings.mean(dim=0)
-    clusters = search_engine.update(page_embedding)
-    test_storage
-    return ""
+    print(page_embedding.shape)
+    clusters = search_engine.update(page_embedding, title)
+    print(clusters)
+    return jsonify({"status": "index_success"})
 
-@app.route('/search')
-def query(query):
+@app.route('/search', methods=['POST'])
+def query():
     data = request.get_json()
+    print(data)
     query = data["query"]
-    embed = model(query)
-    clusters = search_engine.query(embed)
+    print("")
+    print(query)
+    embed = model.encode(query, convert_to_tensor=True)
+    print(embed.shape)
+    path = search_engine.query(embed)
+    values = search_engine.getValues(path)
+    print(values)
     #  Get data from the clusters and return links and title pages based on that.
-    return clusters
+    return jsonify({"results":values})
 
 @app.route('/')
 def home():
