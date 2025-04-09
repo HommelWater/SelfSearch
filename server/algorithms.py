@@ -1,6 +1,7 @@
 import torch
 
-cossim = lambda a, b: torch.nn.functional.cosine_similarity(a.unsqueeze(0), b, dim=-1)
+cossim = lambda a, b: torch.sqrt((a.unsqueeze(0) - b) ** 2)
+#torch.nn.functional.cosine_similarity(a.unsqueeze(0), b, dim=-1)
 
 # TODO: Parallelize queries, handle storage on disk, prefetch next possible cluster means to gpu?.
 
@@ -10,7 +11,7 @@ class SearchNode:
         self.momentum = momentum
         self.means = None
         self.children = []
-        self.values = []
+        self.values = [value]
     
     def getValues(self, clusters, values=[]):
         values.extend(self.values)
@@ -38,33 +39,38 @@ class SearchNode:
 
     @torch.no_grad()
     def update(self, embed, value, path=[]):
-        similarities = cossim(embed, self.means)
-        most_similar, idx = similarities.max(dim=0)
-        idx = idx.item()
-
-        #  Dynamically calculate the cutoffs based on similarity statistics.
-        alpha_dyn = similarities.quantile(0.9).item()
-        beta_dyn = similarities.quantile(0.7).item()
-
-        #  If the most similar is not that similar, update the mean and return the path. If it's completely out there add a new node.
-        if most_similar < alpha_dyn:  # might need to modify to do top k or something!
-            if most_similar < beta_dyn:
-                self.add_child(embed, value)
-                path.append(len(self.children) - 1)
-                return path
-            path.append(idx)
-            self.update_mean(idx, embed)
-            self.values.append(value)
+        if self.means is None:
+            self.add_child(embed, value)
+            path.append(0)
             return path
 
-        #  If its similar enough to the most similar one, update its mean position and propagate further down.
-        path.append(idx)
-        self.update_mean(idx, embed)
-        return self.children[idx].update(embed - self.means[idx], value, path)
+        similarities = cossim(embed, self.means)
+        most_similar, idx = similarities.max(dim=0)
+        idx = idx.item()    
+
+        if len(self.children) > 1:
+            alpha = similarities.quantile(0.9).item()
+            beta = similarities.quantile(0.7).item()
+        else:
+            alpha = 0.9
+            beta = 0.7
+
+        if most_similar > alpha:
+            path.append(idx)
+            self.update_mean(idx, embed)
+            self.children[idx].values.append(value)
+            return path
+        if most_similar > beta:
+            path.append(idx)
+            self.update_mean(idx, embed)
+            return self.children[idx].update(embed - self.means[idx], value, path)
+        
+        self.add_child(embed, value)
+        path.append(len(self.children) - 1)
+        return path
 
     @torch.no_grad()
-    def query(self, embed, values=[], path=[]):
-        values.extend(self.values)
+    def query(self, embed, path=[]):
         if self.means is None:
             return path
 
@@ -73,11 +79,15 @@ class SearchNode:
         idx = idx.item()
 
         #  Dynamically calculate the cutoffs based on similarity statistics.
-        alpha_dyn = similarities.quantile(0.9).item()
-        if most_similar < alpha_dyn:
+        if len(self.children) > 1:
+            beta = similarities.quantile(0.9).item()
+        else:
+            beta = 0.9
+
+        if most_similar > beta:
             path.append(idx)
             return path
 
         #  If its similar enough to the most similar one, update its mean position and propagate further down.
         path.append(idx)
-        return self.children[idx].query(embed - self.means[idx], values, path)
+        return self.children[idx].query(embed - self.means[idx], path)
