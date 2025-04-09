@@ -1,25 +1,45 @@
 import torch
 
-cossim = lambda a, b: torch.sqrt((a.unsqueeze(0) - b) ** 2)
-#torch.nn.functional.cosine_similarity(a.unsqueeze(0), b, dim=-1)
+cossim = lambda a, b: torch.nn.functional.cosine_similarity(a.unsqueeze(0), b, dim=-1)
 
 # TODO: Parallelize queries, handle storage on disk, prefetch next possible cluster means to gpu?.
 
 class SearchNode:
-    def __init__(self, dim, value, momentum=0.1):
+    def __init__(self, dim, momentum=0.1):
         self.dim = dim
         self.momentum = momentum
         self.means = None
         self.children = []
-        self.values = [value]
-    
-    def getValues(self, clusters, values=[]):
+        self.values = []
+
+    def getValues(self, clusters, values=None):
+        """
+        If clusters is a list of ints, traverse one branch.
+        If clusters is a list of branch lists, traverse each and return a list of result lists.
+        """
+        if values is None:
+            values = []
+        # Append the current node's values
         values.extend(self.values)
-        if clusters == []: return values
-        return self.children[clusters[0]].getValues(clusters[1:], values)
+        
+        if not clusters:
+            return values
+        
+        # If clusters is a single branch (list of ints), continue recursion:
+        if all(isinstance(item, int) for item in clusters):
+            return self.children[clusters[0]].getValues(clusters[1:], values)
+        
+        # Otherwise, clusters is a list of branch lists.
+        all_results = []
+        for branch in clusters:
+            # We use values.copy() to avoid sharing the same accumulation between branches.
+            result = self.getValues(branch, values.copy())
+            all_results.append(result)
+        return all_results
 
     def update_all_means(self, d_mean):
-        if self.means is None: return
+        if self.means is None:
+            return
         self.means += d_mean
         for child in self.children:
             child.update_all_means(d_mean)
@@ -31,63 +51,78 @@ class SearchNode:
         self.children[idx].update_all_means(d_mean)
 
     def add_child(self, embed, value):
-        self.children.append(SearchNode(self.dim, value, self.momentum))
+        self.children.append(SearchNode(self.dim, self.momentum))
+        self.children[-1].values.append(value)
         if self.means is None:
             self.means = embed.clone().unsqueeze(0)
         else:
             self.means = torch.cat([self.means, embed.unsqueeze(0)], dim=0)
 
     @torch.no_grad()
-    def update(self, embed, value, path=[]):
+    def update(self, embed, value, path=None):
+        #embed = torch.norm(embed, dim=-1)
+        """Return all candidate update paths that exceed thresholds."""
+        if path is None:
+            path = []
         if self.means is None:
             self.add_child(embed, value)
-            path.append(0)
-            return path
-
-        similarities = cossim(embed, self.means)
-        most_similar, idx = similarities.max(dim=0)
-        idx = idx.item()    
-
-        if len(self.children) > 1:
-            alpha = similarities.quantile(0.9).item()
-            beta = similarities.quantile(0.7).item()
-        else:
-            alpha = 0.9
-            beta = 0.7
-
-        if most_similar > alpha:
-            path.append(idx)
-            self.update_mean(idx, embed)
-            self.children[idx].values.append(value)
-            return path
-        if most_similar > beta:
-            path.append(idx)
-            self.update_mean(idx, embed)
-            return self.children[idx].update(embed - self.means[idx], value, path)
+            return [path + [0]]
         
+        similarities = cossim(embed, self.means)
+        print("Similarities:", similarities)
+        
+        # Define thresholds (adjust as needed)
+        alpha = 0.6
+        beta = 0.4
+        print(f"alpha: {alpha}, beta: {beta}")
+        
+        candidate_paths = []
+        # Check for indices with high similarity (> alpha)
+        high_sim_idxs = torch.nonzero(similarities > alpha).view(-1)
+        if high_sim_idxs.numel() > 0:
+            for idx in high_sim_idxs.tolist():
+                new_path = path + [idx]
+                self.update_mean(idx, embed)
+                self.children[idx].values.append(value)
+                candidate_paths.append(new_path)
+            return candidate_paths
+        
+        # Check for indices that exceed beta
+        mid_sim_idxs = torch.nonzero(similarities > beta).view(-1)
+        if mid_sim_idxs.numel() > 0:
+            for idx in mid_sim_idxs.tolist():
+                new_path = path + [idx]
+                self.update_mean(idx, embed)
+                child_paths = self.children[idx].update(embed - self.means[idx], value, new_path)
+                # Assume child_paths is a list
+                candidate_paths.extend(child_paths)
+            return candidate_paths
+
+        # If no similarities exceed thresholds, add a new child.
         self.add_child(embed, value)
-        path.append(len(self.children) - 1)
-        return path
+        return [path + [len(self.children) - 1]]
 
     @torch.no_grad()
-    def query(self, embed, path=[]):
+    def query(self, embed, path=None):
+        #embed = torch.norm(embed, dim=-1)
+        """Return all candidate query paths that meet the beta threshold."""
+        if path is None:
+            path = []
         if self.means is None:
-            return path
+            return [path]
 
         similarities = cossim(embed, self.means)
-        most_similar, idx = similarities.max(dim=0)
-        idx = idx.item()
-
-        #  Dynamically calculate the cutoffs based on similarity statistics.
-        if len(self.children) > 1:
-            beta = similarities.quantile(0.9).item()
-        else:
-            beta = 0.9
-
-        if most_similar > beta:
-            path.append(idx)
-            return path
-
-        #  If its similar enough to the most similar one, update its mean position and propagate further down.
-        path.append(idx)
-        return self.children[idx].query(embed - self.means[idx], path)
+        beta = 0.4
+        candidate_paths = []
+        candidate_idxs = torch.nonzero(similarities > beta).view(-1)
+        if candidate_idxs.numel() > 0:
+            for idx in candidate_idxs.tolist():
+                new_path = path + [idx]
+                child_paths = self.children[idx].query(embed - self.means[idx], new_path)
+                candidate_paths.extend(child_paths)
+            return candidate_paths
+        
+        # If no index meets beta, use the best match.
+        best_idx = similarities.argmax().item()
+        new_path = path + [best_idx]
+        return self.children[best_idx].query(embed - self.means[best_idx], new_path)

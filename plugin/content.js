@@ -1,57 +1,57 @@
 (function() {
-  // Improved text processing with garbage filtering
-  function processPageText() {
-      const forbiddenTags = ['SCRIPT', 'STYLE', 'NOSCRIPT', 'SVG', 'HEADER', 'FOOTER', 'NAV'];
-      const clone = document.cloneNode(true);
-      
-      // Remove unwanted elements
-      clone.querySelectorAll(forbiddenTags.join(',')).forEach(el => el.remove());
-      
-      // Get clean text content
-      const rawText = clone.body.innerText || "";
-      
-      // Process text
-      return rawText.split(/[\n\r]+/)
-          .map(line => line.trim())
-          .filter(line => {
-              // Basic garbage filtering
-              const text = line.toLowerCase();
-              const isGarbage = text.length < 20 || 
-                             text.startsWith('cookie') ||
-                             /login|sign up|modal|popup/i.test(text);
-              return !isGarbage && line.length > 0;
-          });
-  }
-
-  // Send data to server
-  async function sendData(pageData) {
-      try {
-          const response = await fetch('http://localhost:1111', {
-              method: 'POST',
-              headers: {
-                  'Content-Type': 'application/json',
-                  'Extension-Version': 'v1.0'
-              },
-              body: JSON.stringify(pageData)
-          });
-
-          if (!response.ok) {
-              console.error('Server responded with:', response.status);
-          }
-      } catch (error) {
-          console.error('Failed to send data:', error);
-      }
-  }
-
-  // Create page data object
-  const pageData = {
-      url: window.location.href,
-      domain: new URL(window.location.href).hostname,
-      title: document.title,
-      timestamp: new Date().toISOString(),
-      text: processPageText()
-  };
-
-  // Send the data
-  sendData(pageData);
-})();
+    // Create and style the button
+    const button = document.createElement('button');
+    button.textContent = 'Process Page';
+    button.style.position = 'fixed';
+    button.style.top = '10px';
+    button.style.right = '10px';
+    button.style.zIndex = '9999';
+    button.style.padding = '8px 12px';
+    button.style.backgroundColor = '#007bff';
+    button.style.color = '#fff';
+    button.style.border = 'none';
+    button.style.borderRadius = '4px';
+    button.style.cursor = 'pointer';
+    button.style.boxShadow = '0 2px 4px rgba(0,0,0,0.3)';
+    document.body.appendChild(button);
+  
+    // Improved text processing with garbage filtering
+    function processPageText() {
+        const forbiddenTags = ['SCRIPT', 'STYLE', 'NOSCRIPT', 'SVG', 'HEADER', 'FOOTER', 'NAV'];
+        const clone = document.cloneNode(true);
+        
+        // Remove unwanted elements
+        clone.querySelectorAll(forbiddenTags.join(',')).forEach(el => el.remove());
+        
+        // Get clean text content
+        const rawText = clone.body.innerText || "";
+        
+        // Process text
+        return rawText.split(/[\n\r]+/)
+            .map(line => line.trim())
+            .filter(line => {
+                // Basic garbage filtering
+                const text = line.toLowerCase();
+                const isGarbage = text.length < 20 || 
+                               text.startsWith('cookie') ||
+                               /login|sign up|modal|popup/i.test(text);
+                return !isGarbage && line.length > 0;
+            });
+    }
+  
+    // Function executed when button is clicked
+    function processAndSend() {
+        const pageData = {
+            url: window.location.href,
+            domain: new URL(window.location.href).hostname,
+            title: document.title,
+            timestamp: new Date().toISOString(),
+            text: processPageText()
+        };
+  
+        chrome.runtime.sendMessage({ action: 'sendPageData', data: pageData });
+    }
+  
+    // Add the click event listener to the button
+    button.addEventListener('click', processAndSend);
+  })();
