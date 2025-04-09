@@ -38,9 +38,6 @@ class SearchNode:
 
     @torch.no_grad()
     def update(self, embed, value, path=[]):
-        if self.means is None:
-            return path
-
         similarities = cossim(embed, self.means)
         most_similar, idx = similarities.max(dim=0)
         idx = idx.item()
@@ -84,16 +81,3 @@ class SearchNode:
         #  If its similar enough to the most similar one, update its mean position and propagate further down.
         path.append(idx)
         return self.children[idx].query(embed - self.means[idx], values, path)
-
-class SearchTree:
-    def __init__(self, embed, value):
-        self.dim = embed.size(-1)
-        self.root = SearchNode(self.dim, value)
-        self.root.means = embed.clone().unsqueeze(0)
-        self.root.values = [value]
-
-    def query(self, embed):
-        return self.root.query(embed)
-
-    def update(self, embed, value):
-        return self.root.update(embed, value)
