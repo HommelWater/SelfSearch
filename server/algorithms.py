@@ -1,8 +1,16 @@
 import torch
 
-cossim = lambda a, b: torch.nn.functional.cosine_similarity(a.unsqueeze(0), b, dim=-1)
+cossim = lambda a, b: torch.nn.functional.cosine_similarity(a.reshape(-1, a.size(-1)), b, dim=-1)
 
 # TODO: Parallelize queries, handle storage on disk, prefetch next possible cluster means to gpu?.
+
+def create_page_embed(title_embed, sentence_embeds, k=10):
+    similarities = cossim(sentence_embeds, sentence_embeds)
+    topk_similarities, topk_indices = torch.topk(similarities, k=min(k, similarities.shape[0]))
+    selected_sentence_embeds = sentence_embeds[topk_indices]
+    mask = torch.zeros_like(similarities, dtype=torch.bool)
+    mask[topk_indices] = True
+    return selected_sentence_embeds.mean(dim=0), mask
 
 class SearchNode:
     def __init__(self, dim, momentum=0.1):
@@ -74,7 +82,6 @@ class SearchNode:
         # Define thresholds (adjust as needed)
         alpha = 0.6
         beta = 0.4
-        print(f"alpha: {alpha}, beta: {beta}")
         
         candidate_paths = []
         # Check for indices with high similarity (> alpha)
