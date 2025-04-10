@@ -1,12 +1,12 @@
 from flask import Flask, request, jsonify, render_template
 from sentence_transformers import SentenceTransformer
-from algorithms import SearchNode, create_page_embed
+from algorithms import SearchNode
 from transformers import pipeline
 import torch
 
 model_string = 'all-mpnet-base-v2'
-model = SentenceTransformer('all-mpnet-base-v2').to("cuda")
-summary_model = pipeline("text-generation", model="google/gemma-3-1b-it", device="cuda", torch_dtype=torch.bfloat16)  # TODO: replace with better model over API, maybe deepseek v3
+model = SentenceTransformer('all-mpnet-base-v2').to("cpu")
+summary_model = pipeline("text-generation", model="google/gemma-3-1b-it", device="cpu", torch_dtype=torch.bfloat16)  # TODO: replace with better model over API, maybe deepseek v3
 search_engine = None
 app = Flask(__name__)
 
@@ -25,7 +25,7 @@ def index():
             },
             {
                 "role": "user",
-                "content": [{"type": "text", "text": " ".join(text)},]
+                "content": [{"type": "text", "text": "\n".join(text)},]
             }
         ]
     ]
@@ -38,7 +38,7 @@ def index():
     if search_engine is None:
         search_engine = SearchNode(model.get_sentence_embedding_dimension(), momentum=0.1)
 
-    clusters = search_engine.update(embedding, title)
+    clusters = search_engine.update(embedding, title)  # for now just store titles, update later with indices in a separate data storage server.
     return jsonify({"status": "index_success"})
 
 @app.route('/search', methods=['POST'])
