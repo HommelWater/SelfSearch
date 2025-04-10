@@ -6,7 +6,7 @@ import torch
 
 model_string = 'all-mpnet-base-v2'
 model = SentenceTransformer('all-mpnet-base-v2').to("cuda")
-summary_model = pipeline("text-generation", model="google/gemma-3-1b-it", device="cuda", torch_dtype=torch.bfloat16)
+summary_model = pipeline("text-generation", model="google/gemma-3-1b-it", device="cuda", torch_dtype=torch.bfloat16)  # TODO: replace with better model over API, maybe deepseek v3
 search_engine = None
 app = Flask(__name__)
 

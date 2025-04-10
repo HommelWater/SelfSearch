@@ -5,7 +5,7 @@ cossim = lambda a, b: torch.nn.functional.cosine_similarity(a.reshape(-1, a.size
 # TODO: Parallelize queries, handle storage on disk, prefetch next possible cluster means to gpu?.
 
 def create_page_embed(title_embed, sentence_embeds, k=10):
-    similarities = cossim(sentence_embeds, sentence_embeds)
+    similarities = cossim(title_embed, sentence_embeds)
     topk_similarities, topk_indices = torch.topk(similarities, k=min(k, similarities.shape[0]))
     selected_sentence_embeds = sentence_embeds[topk_indices]
     mask = torch.zeros_like(similarities, dtype=torch.bool)
