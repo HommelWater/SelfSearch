@@ -85,7 +85,7 @@ class SearchNode:
         
         candidate_paths = []
         # Check for indices with high similarity (> alpha)
-        high_sim_idxs = torch.nonzero(similarities > alpha).view(-1)
+        high_sim_idxs = torch.nonzero(similarities > alpha).reshape(-1)
         if high_sim_idxs.numel() > 0:
             for idx in high_sim_idxs.tolist():
                 new_path = path + [idx]
@@ -95,7 +95,7 @@ class SearchNode:
             return candidate_paths
         
         # Check for indices that exceed beta
-        mid_sim_idxs = torch.nonzero(similarities > beta).view(-1)
+        mid_sim_idxs = torch.nonzero(similarities > beta).reshape(-1)
         if mid_sim_idxs.numel() > 0:
             for idx in mid_sim_idxs.tolist():
                 new_path = path + [idx]
@@ -133,3 +133,4 @@ class SearchNode:
         best_idx = similarities.argmax().item()
         new_path = path + [best_idx]
         return self.children[best_idx].query(embed - self.means[best_idx], new_path)
+    
