@@ -8,11 +8,12 @@ app = Flask(__name__)
 def index():
     global search_engine
     data = request.get_json()
-    search_engine.index(data["text"], data["url"], data["title"])
+    search_engine.index(data["title"], data["text"], data["screenshot"], data["url"])
     return jsonify({"status": "index_success"})
 
 @app.route('/search', methods=['POST'])
 def query():
+    global search_engine
     data = request.get_json()
     results = search_engine.search(data["query"])
     return jsonify({"results":results})

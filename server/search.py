@@ -69,27 +69,41 @@ class Storage:
 
 class SearchEngine:
     def __init__(self):
-        self.summary_model = pipeline("text-generation", model="meta-llama/Llama-3.2-3B-Instruct", device="cuda", torch_dtype=torch.bfloat16)  # TODO: replace with better model over API, maybe deepseek v3
+        self.summary_model = pipeline(
+            "image-text-to-text",
+            model="google/gemma-3-4b-it",
+            device="cuda",
+            torch_dtype=torch.bfloat16
+        )# TODO: replace with better model over API, maybe deepseek v3
         self.storage = Storage()
 
-    def index(self, site_text, page_url, page_title):
-        prompt = [[
-            {"role": "system",  "content": [{"type": "text", "text": "What is this webpage about? Be as specific as possible and answer with more than 10 words. Answer with keywords only!"},]}, 
-            {"role": "user",    "content": [{"type": "text", "text": "\n".join(site_text)},]}
-            ]]
-        output = self.summary_model(prompt, max_new_tokens=30)
-        keywords = output[0][0]['generated_text'][-1]['content'].lower().replace(",", "").split(" ")
-        print(keywords)
-        self.storage.store(keywords, (page_title, page_url))
+    def index(self, title, text, image_url, page_url):
+        prompt = [
+            {"role": "system",  "content": [{"type": "text", "text": "You are a bot that helps index webpages."}]},
+            {"role": "user",    "content": [
+                {"type": "image",   "url":  image_url},
+                {"type": "text",    "text": text},
+                {"type": "text",    "text": "Give keywords based on the screenshot and site data. Answer in keywords only!"}
+        ]}]
+
+        output = self.summary_model(text=prompt, max_new_tokens=100)
+        keywords = output[0]['generated_text'][-1]['content']
+        keywords = keywords.lower().replace(".", "").split(", ")
+        print(f"{title}: {keywords}")
+        self.storage.store(set(keywords), (title, page_url))
 
     def search(self, query):
-        prompt = [[
-            {"role": "system",   "content": [{"type": "text", "text": "What is this person looking for? Be as specific as possible and include any related terms and answer with more than 10 words. Answer with keywords only!"},]}, 
-            {"role": "user",     "content": [{"type": "text", "text": query},]}
-            ]]
-        output = self.summary_model(prompt, max_new_tokens=30)
-        keywords = output[0][0]['generated_text'][-1]['content'].lower().replace(",", "").split(" ")
+        prompt = [
+            {"role": "system",   "content": [{"type": "text", "text": "You are a bot that helps index webpages."},]}, 
+            {"role": "user",     "content": [
+                {"type": "image",   "url":  "https://images.shopcdn.co.uk/88/2e/882e9bb7c40983eef4359e03012f279c/512x512/webp/resize"},
+                {"type": "text", "text": "Give keywords for the following query:\n" + query + "\nAnswer in keywords only!"}
+
+        ]}]
+        
+        output = self.summary_model(text=prompt, max_new_tokens=100)
+        keywords = output[0]['generated_text'][-1]['content'].lower().replace(".", "").split(", ")
         print(keywords)
-        results = self.storage.search(keywords)
+        results = self.storage.search(set(keywords))
         return results
 

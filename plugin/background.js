@@ -15,4 +15,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             console.error('Failed to send data:', error);
         });
     }
-  });
+    if (message.action === 'captureScreenshot') {
+        // captureVisibleTab is async—pass dataUrl into sendResponse
+        chrome.tabs.captureVisibleTab(
+          sender.tab.windowId,          // or null to default to current window
+          { format: 'png' },
+          (dataUrl) => {
+            sendResponse({ screenshot: dataUrl });
+          }
+        );
+        // MUST return true to indicate you’ll call sendResponse asynchronously
+        return true;
+      }
+});
+
+  

@@ -1,51 +1,42 @@
 (function() {
     function processPageText() {
         const forbiddenTags = ['SCRIPT', 'STYLE', 'NOSCRIPT', 'SVG', 'HEADER', 'FOOTER', 'NAV'];
-        const clone = document.cloneNode(true);
-        // Remove unwanted elements
-        clone.querySelectorAll(forbiddenTags.join(',')).forEach(el => el.remove());
-        
-        // Get clean text content
-        const rawText = clone.body.innerText || "";
-        // Process text
-        return rawText.split(/[\n\r]+/)
-            .map(line => line.trim())
-            .filter(line => {
-                // Basic garbage filtering
-                const text = line.toLowerCase();
-                const isGarbage = text.length < 20 || 
-                               text.startsWith('cookie') ||
-                               /login|sign up|modal|popup/i.test(text);
-                return !isGarbage && line.length > 0;
-            });
+        const clone = document.body.cloneNode(true);
+        forbiddenTags.forEach(tag => {
+            clone.querySelectorAll(tag).forEach(el => el.remove());
+        });
+        return clone.innerText || "";
     }
 
     function processAndSend() {
-        const pageData = {
-            url: window.location.href,
-            domain: new URL(window.location.href).hostname,
-            title: document.title,
-            timestamp: new Date().toISOString(),
-            text: processPageText()
-        };
-
-        chrome.runtime.sendMessage({ action: 'sendPageData', data: pageData });
+        chrome.runtime.sendMessage({ action: 'captureScreenshot' }, (response) => {
+            const pageData = {
+                url: window.location.href,
+                domain: window.location.hostname,
+                title: document.title,
+                timestamp: new Date().toISOString(),
+                text: processPageText(),
+                screenshot: response.screenshot
+            };
+            chrome.runtime.sendMessage({ action: 'sendPageData', data: pageData });
+        });
     }
 
-    // Create button.
     const button = document.createElement('button');
     button.textContent = 'Process Page';
-    button.style.position = 'fixed';
-    button.style.top = '10px';
-    button.style.right = '10px';
-    button.style.zIndex = '9999';
-    button.style.padding = '8px 12px';
-    button.style.backgroundColor = '#007bff';
-    button.style.color = '#fff';
-    button.style.border = 'none';
-    button.style.borderRadius = '4px';
-    button.style.cursor = 'pointer';
-    button.style.boxShadow = '0 2px 4px rgba(0,0,0,0.3)';
+    Object.assign(button.style, {
+        position: 'fixed',
+        top: '10px',
+        right: '10px',
+        zIndex: '9999',
+        padding: '8px 12px',
+        backgroundColor: '#007bff',
+        color: '#fff',
+        border: 'none',
+        borderRadius: '4px',
+        cursor: 'pointer',
+        boxShadow: '0 2px 4px rgba(0,0,0,0.3)'
+    });
     document.body.appendChild(button);
     button.addEventListener('click', processAndSend);
 })();
