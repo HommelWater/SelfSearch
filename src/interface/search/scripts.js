@@ -11,6 +11,9 @@ async function requestRecentlyIndexed(){
     });
         if (!res.ok) throw new Error(res.status);
         const r = await res.json();
+        if (r.type && r.type === "failure"){
+            location.href = "/auth";
+        }
         const results = r.recently_indexed;
 
         document.getElementById("newly-indexed-content").innerHTML = results.length > 0 ? "" : "No recently indexed pages found.";
