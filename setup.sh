@@ -99,7 +99,7 @@ After=network.target
 User=$(whoami)
 WorkingDirectory=${PROJECT_ROOT}/src
 EnvironmentFile=${ENV_FILE}
-ExecStart=${VENV_DIR}/bin/uvicorn main:app --host 127.0.0.1 --port ${APP_PORT}
+ExecStart=${VENV_DIR}/bin/uvicorn main:app --host 127.0.0.1 --port ${APP_PORT} --proxy-headers
 Restart=always
 RestartSec=10
 
