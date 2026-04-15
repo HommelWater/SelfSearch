@@ -4,10 +4,8 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, RedirectResponse
 
 from routers.auth_router import router as auth_router
-from routers.auth_router import CONTYPE, PEERS, ClientRequest, get_invite_code, get_user_and_session, user_is_invalid
-from routers.file_router import router as file_router
+from routers.auth_router import CONTYPE, PEERS
 from routers.user_router import router as user_router
-from routers.persistent_router import router as persistent_router
 from routers.search_router import router as search_router
 
 app = FastAPI()
@@ -21,9 +19,7 @@ app.add_middleware(
 )
 
 app.include_router(auth_router, prefix="/auth")
-#app.include_router(file_router, prefix="/files")
 app.include_router(user_router, prefix="/users")
-#app.include_router(persistent_router, prefix="/persistent")
 app.include_router(search_router, prefix="/search")
 
 app.mount("/interface/", StaticFiles(directory="./interface/"), name="interface")

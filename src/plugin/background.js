@@ -112,7 +112,7 @@ browser.runtime.onMessage.addListener((request, sender, sendResponse) => {
       }
     } catch (err) {
       console.error(`Error in action ${request.action}:`, err);
-      return { type: false, error: err.message };
+      return { success: false, error: err.message };
     }
   };
 
