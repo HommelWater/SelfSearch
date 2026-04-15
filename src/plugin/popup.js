@@ -84,10 +84,10 @@ indexBtn.addEventListener('click', async () => {
   const response = await browser.runtime.sendMessage({ action: 'indexPage' });
   indexBtn.disabled = false;
   indexBtn.textContent = '📸 INDEX THIS PAGE';
-  if (response.success) {
+  if (response.type !== "failure") {
     showStatus(indexStatusDiv, '✅ Page indexed successfully!', 'success');
   } else {
-    showStatus(indexStatusDiv, `❌ Error: ${response.error}`, 'error');
+    showStatus(indexStatusDiv, `❌ Error: ${response.data.notification}`, 'error');
   }
 });
 

@@ -101,7 +101,7 @@ browser.runtime.onMessage.addListener((request, sender, sendResponse) => {
           const selected = await getSelectedServer();
           if (!selected) throw new Error('No server selected');
           const data = await indexCurrentPage(selected);
-          return { success: true, data };
+          return data;
         }
         case 'checkOrigin': {
           const token = await getServerToken(request.url);
@@ -112,7 +112,7 @@ browser.runtime.onMessage.addListener((request, sender, sendResponse) => {
       }
     } catch (err) {
       console.error(`Error in action ${request.action}:`, err);
-      return { success: false, error: err.message };
+      return { type: false, error: err.message };
     }
   };
 

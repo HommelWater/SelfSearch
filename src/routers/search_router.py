@@ -144,6 +144,7 @@ async def index_webpage(session_token, url, title, image_base64_png):
         'id': int(hashlib.sha256(url.encode()).hexdigest()[:16], 16) % (2**64)
     }
     ttv.add_index(info)
+    return {"type":"success"}
     
     
 async def search(session_token, query):
