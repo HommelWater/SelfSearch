@@ -101,6 +101,7 @@ browser.runtime.onMessage.addListener((request, sender, sendResponse) => {
           const selected = await getSelectedServer();
           if (!selected) throw new Error('No server selected');
           const data = await indexCurrentPage(selected);
+          data["success"] = true;
           return data;
         }
         case 'checkOrigin': {
