@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover, interactive-widgets=resizes-content">
+    <link rel="icon" href="./images/main.png" type="image/png">
+    <title>Search</title>
+    <link rel="stylesheet" href="/interface/search/styles.css">
+    <link rel="stylesheet" href="/interface/shared/themes.css">
+    
+    <script src="/interface/search/scripts.js"></script>
+    <script src="/interface/shared/themes.js"></script>
+</head>
+<body>
+    <div id="container" class="container">
+        <div id="header"><h3>Search</h3></div>
+        <div id="search">
+            <div id="newly-indexed">
+                <div id="newly-indexed-header">
+                    <h2>Newly Indexed</h2>
+                </div>
+                <div id="newly-indexed-content"></div>
+            </div>
+            <div id="search-body">
+                <form id="search-form">
+                    <input 
+                        type="text" 
+                        id="search-input" 
+                        name="query" 
+                        placeholder="Enter your search query..."
+                        autocomplete="off"
+                        required
+                    >
+                    <button id="search-button">Search</button>
+                </form>
+                <div id="search-results"></div>
+            </div>
+            <div id="search-history">
+                <div id="search-history-header">
+                    <h2>History</h2>
+                </div>
+                <div id="search-history-content">
+                    <p>No search history yet.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

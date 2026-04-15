@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>User Invite Tree</title>
+    <link rel="stylesheet" href="/interface/shared/themes.css">
+    <link rel="stylesheet" href="/interface/users/style.css">
+    <script src="/interface/shared/functions.js"></script>
+    <script src="/interface/users/app.js"></script>
+</head>
+<body>
+    <div class="tree-container">
+        <div class="tree-header">
+            <h1>Invite Network</h1>
+            <p>Visualize your user referrals</p>
+        </div>
+        
+        <div class="stats-bar" id="statsBar" style="display: none;">
+            <div class="stat">
+                <div class="stat-value" id="totalUsers">0</div>
+                <div class="stat-label">Total Users</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value" id="totalLevels">0</div>
+                <div class="stat-label">Tree Depth</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value" id="avgChildren">0</div>
+                <div class="stat-label">Avg. Invites</div>
+            </div>
+        </div>
+
+        <div id="treeRoot" class="user-tree">
+            <div class="loading">
+                <div class="spinner"></div>
+                <p>Loading user tree...</p>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

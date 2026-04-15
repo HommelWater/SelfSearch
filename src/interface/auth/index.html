@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Login</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover, interactive-widgets=resizes-content">
+	<link rel="icon" href="/interface/auth/icon.jpg" type="image/png">
+  <link rel="stylesheet" href="/interface/auth/style.css">
+  <script src="/interface/shared/functions.js"></script>
+  <script src="/interface/auth/qrcode.min.js"></script>
+  <script src="/interface/auth/app.js"></script>
+</head>
+<body>
+  <div id="login" class="login">
+      <h2 style="padding:10px">Log in</h2>
+      <div class="form-group" style="padding:20px;">
+          <input id="login-username" placeholder="Username"></input>
+          <input id="login-code" placeholder="Login / Invite Code"></input>
+          <button id="login-button" class="btn">Log in / Sign up</button>
+      </div>
+      <div id="qrcode-label"></div>
+      <div id="qrcode"></div>
+  </div>
+</body>
+</html>

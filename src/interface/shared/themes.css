@@ -1,0 +1,9 @@
+:root {
+	--color-background: #CADCAE;
+	--color-card: #E1E9C9;
+	--color-button: #EDA35A;
+	--color-button-h: #FEE8D9;
+	--color-text:black;
+	--color-items: var(--color-background);
+	--color-border: #2222;
+}

@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; border-radius: 0px;}
+    body {
+      width: 380px;
+      padding: 16px;
+      font-family: system-ui, sans-serif;
+      background: #CADCAE;
+      color: black;
+    }
+    h2 {
+      font-size: 1.2rem;
+      margin-bottom: 8px;
+      border-left: 3px solid #EDA35A;
+      padding-left: 8px;
+    }
+    label {
+      display: block;
+      font-weight: 600;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+    select, input, button {
+      width: 100%;
+      padding: 8px;
+      margin: 4px 0;
+      border: 1px solid #222;
+      background: #E1E9C9;
+      font-size: 0.85rem;
+    }
+    button {
+      background: #EDA35A;
+      cursor: pointer;
+      font-weight: 500;
+    }
+    button:hover {
+      background: #FEE8D9;
+    }
+    button.secondary {
+      background: #E1E9C9;
+    }
+    .server-row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      margin: 8px 0;
+    }
+    .server-row select {
+      flex: 1;
+      margin: 0;
+    }
+    .server-row button {
+      width: auto;
+      padding: 8px 12px;
+      margin: 0;
+    }
+    .status {
+      margin-top: 10px;
+      padding: 6px 10px;
+      font-size: 0.75rem;
+      border-left: 3px solid transparent;
+    }
+    .success { background: #d1e7c5; border-left-color: #2e7d32; }
+    .error { background: #ffe0e0; border-left-color: #c62828; }
+    .info { background: #e3f2fd; border-left-color: #1565c0; }
+    hr {
+      margin: 12px 0;
+      border: none;
+      border-top: 1px solid #222;
+    }
+    small {
+      display: block;
+      font-size: 0.65rem;
+      margin-top: 6px;
+      color: #2c3e2f;
+    }
+  </style>
+</head>
+<body>
+  <h2>📄 Bombus Indexer</h2>
+
+  <div class="section">
+    <label>🗄️ SELECT SERVER</label>
+    <div class="server-row">
+      <select id="serverSelect"></select>
+      <button id="removeServerBtn" class="secondary" title="Remove selected server">🗑️</button>
+    </div>
+    <button id="indexBtn">📸 INDEX THIS PAGE</button>
+    <div id="indexStatus" class="status"></div>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>

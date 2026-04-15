@@ -1,0 +1,69 @@
+*,
+*::before,
+*::after {
+	box-sizing: border-box;
+}
+
+:root {
+	--color-background: #CADCAE;
+	--color-card: #E1E9C9;
+	--color-button: #EDA35A;
+	--color-button-h: #FEE8D9;
+	--color-text:black;
+	--color-items: var(--color-background);
+	--color-border: #2222;
+}
+
+body {
+	margin: 0;
+	font-family: 'Segoe UI', 'Tahoma', 'Geneva', 'Verdana', 'sans-serif';
+	background: var(--color-background);
+	color: var(--color-text);
+	display: flex;
+	justify-content: center;
+	text-align: center;
+	flex-direction: column;
+	width: 100dvw;
+	height: 100dvh;
+}
+
+.login, .signup{
+	background: var(--color-card);
+	width:100%;
+	display: flex;
+	flex-direction: column;
+    justify-content: center;
+    align-items: center;
+}
+
+.form-group {
+	display: flex;
+	gap: 10px;
+	align-items: stretch;
+	margin-top: 0;
+	flex-direction: column;
+	padding-top: 8px;
+	border-top: 1px solid var(--color-border);
+	background: transparent;
+}
+
+/* send button */
+.btn {
+	padding: 12px 18px;
+	border: none;
+	cursor: pointer;
+	font-weight: 600;
+	background: var(--color-button);
+	transition: transform .12s ease, opacity .12s ease, background .12s ease;
+	border-radius: 0px;
+	margin-bottom: auto;
+	margin-top: auto;
+	color: var(--color-text);
+	font-size:medium;
+}
+
+.btn:hover {
+	transform: translateY(-2px);
+	background: var(--color-button-h);
+	opacity: 0.98;
+}
