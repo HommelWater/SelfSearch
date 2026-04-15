@@ -57,26 +57,34 @@ async function indexCurrentPage(apiUrl) {
   const tab = tabs[0];
   if (!tab) throw new Error('No active tab');
 
-  const dataUrl = await browser.tabs.captureVisibleTab(tab.windowId, { format: 'png' });
-  const base64 = dataUrl.split(',')[1];
+  // Capture as blob instead of dataURL
+  const dataUrl = await browser.tabs.captureVisibleTab(tab.windowId, { 
+    format: 'jpeg', 
+    quality: 80 
+  });
+  
+  // Convert dataURL to Blob
+  const response = await fetch(dataUrl);
+  const blob = await response.blob();
 
-  const response = await fetch(`${apiUrl}/index`, {
+  // Create FormData
+  const formData = new FormData();
+  formData.append('session_token', sessionToken);
+  formData.append('url', tab.url);
+  formData.append('title', tab.title);
+  formData.append('screenshot', blob, 'screenshot.jpg');
+
+  const fetchResponse = await fetch(`${apiUrl}/index`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      session_token: sessionToken,
-      url: tab.url,
-      title: tab.title,
-      image_base64: base64
-    })
+    body: formData // No Content-Type header needed - browser sets it with boundary
   });
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Indexing failed: ${response.status} - ${errorText}`);
+  if (!fetchResponse.ok) {
+    const errorText = await fetchResponse.text();
+    throw new Error(`Indexing failed: ${fetchResponse.status} - ${errorText}`);
   }
 
-  return await response.json();
+  return await fetchResponse.json();
 }
 
 // ----- Message handling -----

@@ -1,5 +1,5 @@
 from routers.auth_router import user_is_invalid, get_user_and_session
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Form, File, UploadFile
 from google import genai
 from google.genai import types
 from pydantic import BaseModel
@@ -79,7 +79,7 @@ class TantivySearchIndex:
 
 client = genai.Client()
 ttv = TantivySearchIndex()
-async def index_webpage(session_token, url, title, image_base64_png):
+async def index_webpage(session_token, url, title, image_bytes: bytes):
     user, session = get_user_and_session(session_token)
     msg = user_is_invalid(user, True, False)
     if msg: return msg
@@ -104,7 +104,7 @@ async def index_webpage(session_token, url, title, image_base64_png):
             model="gemini-2.5-flash-lite", 
             contents=[
                 types.Part.from_bytes(
-                    data=base64.b64decode(image_base64_png),
+                    data=image_bytes,
                     mime_type='image/png',
                 ),
                 prompt
@@ -166,12 +166,6 @@ class SearchRequest(BaseModel):
 class RecentIndexRequest(BaseModel):
     session_token:str
 
-class IndexRequest(BaseModel):
-    image_base64:str
-    session_token:str
-    url:str
-    title:str
-
 @router.post("")
 async def s(request_data: SearchRequest):
     return await search(request_data.session_token, request_data.query)
@@ -181,5 +175,11 @@ async def s(request_data: RecentIndexRequest):
     return await recently_indexed(request_data.session_token)
 
 @router.post("/index")
-async def s(request_data: IndexRequest):
-    return await index_webpage(request_data.session_token, request_data.url, request_data.title, request_data.image_base64)
+async def index(
+    session_token: str = Form(...),
+    url: str = Form(...),
+    title: str = Form(...),
+    screenshot: UploadFile = File(...)
+):
+    image_bytes = await screenshot.read()
+    return await index_webpage(session_token, url, title, image_bytes)
