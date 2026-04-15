@@ -54,6 +54,11 @@ fi
 read -p "Enter your domain name: " DOMAIN
 read -p "Enter your email for Let's Encrypt: " EMAIL
 
+echo "CONTYPE=https://" >> "$ENV_FILE"
+echo "HOSTNAME=$DOMAIN" >> "$ENV_FILE"
+export CONTYPE="https://"
+export HOSTNAME="$DOMAIN"
+
 # --- Nginx config ---
 NGINX_CONF="/etc/nginx/sites-available/${DOMAIN}"
 $SUDO tee "$NGINX_CONF" > /dev/null <<EOF

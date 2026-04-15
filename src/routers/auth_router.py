@@ -2,17 +2,16 @@ from fastapi import APIRouter
 import pyotp
 import uuid
 import database as db
-import re
+import re, os
 from pydantic import BaseModel
 import requests
 from datetime import datetime
 
-CONTYPE = "https://"  # Switch to "http://" for local testing.
-HOSTNAME = "127.0.0.1:8000"  # Hostname of this instance.
+CONTYPE = os.getenv("CONTYPE", "http://")  # Switch to "http://" for local testing.
+HOSTNAME = os.getenv("HOSTNAME", "127.0.0.1:80")
+  # Hostname of this instance.
 PEERS = [
-    "127.0.0.1:8001",
-    "localhost:8001",
-    "0.0.0.0:8001",
+    HOSTNAME
 ]  # Examples for testing, switch these out with domain names in production.
 
 
