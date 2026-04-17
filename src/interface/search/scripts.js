@@ -2,7 +2,7 @@ window.addEventListener('DOMContentLoaded', onLoad);
 
 async function requestRecentlyIndexed(){
     const data = {};
-    data.session_token = localStorage.getItem("session");
+    data.session_token = localStorage.getItem("session") || "";
     try {
         const res = await fetch('/search/recent', {
         method: 'POST',

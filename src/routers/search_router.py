@@ -3,7 +3,7 @@ from fastapi import APIRouter, HTTPException, Form, File, UploadFile
 from google import genai
 from google.genai import types
 from pydantic import BaseModel
-import base64
+import database as db
 import tantivy
 import json
 import time
@@ -79,14 +79,9 @@ class TantivySearchIndex:
 
 client = genai.Client()
 ttv = TantivySearchIndex()
-async def index_webpage(session_token, url, title, image_bytes: bytes):
-    user, session = get_user_and_session(session_token)
-    msg = user_is_invalid(user, True, False)
-    if msg: return msg
 
-    sender_user_id = session["user_id"]
-    
-    prompt = f"""
+def webpage_prompt(url, title):
+    return f"""
     Analyze this webpage screenshot from {url}.
     
     Page Title: {title}
@@ -99,6 +94,28 @@ async def index_webpage(session_token, url, title, image_bytes: bytes):
     
     Format as structured data.
     """
+
+def image_prompt(filename):
+    return f"""
+    Analyze this image with filename {filename}.
+    
+    Extract:
+    1. Important keywords directly related to the image.
+    2. Important keywords relevant to the image.
+    3. A short description of the image.
+    4. A fitting title for the image.
+    
+    Format as structured data.
+    """
+
+async def index_webpage(session_token, url, title_or_filename, is_screenshot, image_bytes: bytes):
+    user, session = get_user_and_session(session_token)
+    msg = user_is_invalid(user, True, False)
+    if msg: return msg
+
+    sender_user_id = session["user_id"]
+    
+    prompt = webpage_prompt(url, title_or_filename) if is_screenshot else image_prompt(title_or_filename)
     try:
         response = client.models.generate_content(
             model="gemini-2.5-flash-lite", 
@@ -134,7 +151,7 @@ async def index_webpage(session_token, url, title, image_bytes: bytes):
         raise HTTPException(500, f"Failed to parse Gemini response: {e}")
     
     info = {
-        'title': result_data.get('title', title),
+        'title': result_data.get('title', title_or_filename),
         'description': result_data.get('description', ''),
         'direct_keywords': ' '.join(result_data.get('direct_keywords', [])),
         'related_keywords': ' '.join(result_data.get('related_keywords', [])),
@@ -144,6 +161,11 @@ async def index_webpage(session_token, url, title, image_bytes: bytes):
         'id': int(hashlib.sha256(url.encode()).hexdigest()[:16], 16) % (2**64)
     }
     ttv.add_index(info)
+    if not is_screenshot:
+        # store it by hash name
+        hash = hashlib.sha256(image_bytes).digest()
+        id = db.add_file(hash.hex(), title_or_filename, len(image_bytes), False)
+        file_metadata = db.get_file(id)
     return {"type":"success"}
     
     
@@ -179,7 +201,9 @@ async def index(
     session_token: str = Form(...),
     url: str = Form(...),
     title: str = Form(...),
-    screenshot: UploadFile = File(...)
+    is_screenshot: bool = Form(...),
+    image: UploadFile = File(...)
 ):
-    image_bytes = await screenshot.read()
-    return await index_webpage(session_token, url, title, image_bytes)
+    image_bytes = await image.read()
+    return await index_webpage(session_token, url, title, is_screenshot, image_bytes)
+

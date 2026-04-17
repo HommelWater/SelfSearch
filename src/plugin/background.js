@@ -72,6 +72,7 @@ async function indexCurrentPage(apiUrl) {
   formData.append('session_token', sessionToken);
   formData.append('url', tab.url);
   formData.append('title', tab.title);
+  formData.append('is_screenshot', true);
   formData.append('screenshot', blob, 'screenshot.jpg');
 
   const fetchResponse = await fetch(`${apiUrl}/index`, {
