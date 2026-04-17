@@ -8,12 +8,12 @@ const STORAGE_SELECTED = 'bombus_selected';   // string (server URL)
 
 // ----- Server management -----
 async function getServers() {
-  const result = await browser.storage.local.get(STORAGE_SERVERS);
+  const result = await api.storage.local.get(STORAGE_SERVERS);
   return result[STORAGE_SERVERS] || {};
 }
 
 async function saveServers(servers) {
-  await browser.storage.local.set({ [STORAGE_SERVERS]: servers });
+  await api.storage.local.set({ [STORAGE_SERVERS]: servers });
 }
 
 async function addServer(url, token) {
@@ -40,12 +40,12 @@ async function removeServer(url) {
 }
 
 async function getSelectedServer() {
-  const result = await browser.storage.local.get(STORAGE_SELECTED);
+  const result = await api.storage.local.get(STORAGE_SELECTED);
   return result[STORAGE_SELECTED] || null;
 }
 
 async function setSelectedServer(url) {
-  await browser.storage.local.set({ [STORAGE_SELECTED]: url });
+  await api.storage.local.set({ [STORAGE_SELECTED]: url });
 }
 
 api.contextMenus.create({
@@ -62,7 +62,7 @@ api.contextMenus.onClicked.addListener(async (info, tab) => {
   
   // Try 1: Get from content script (already loaded in page)
   try {
-    const response = await browser.tabs.sendMessage(tab.id, {
+    const response = await api.tabs.sendMessage(tab.id, {
       action: 'getImageBlob',
       srcUrl: info.srcUrl
     });
@@ -87,7 +87,7 @@ api.contextMenus.onClicked.addListener(async (info, tab) => {
     } catch (e) {
       console.error('Both methods failed:', e);
       // Notify user
-      browser.notifications.create({
+      api.notifications.create({
         type: 'basic',
         title: 'Bombus Search',
         message: 'Could not access image. It may require authentication or be blocked by CORS.'
@@ -115,12 +115,12 @@ async function indexCurrentPage(apiUrl) {
   const sessionToken = await getServerToken(apiUrl);
   if (!sessionToken) throw new Error(`No session token found for ${apiUrl}. Please re-add the server.`);
 
-  const tabs = await browser.tabs.query({ active: true, currentWindow: true });
+  const tabs = await api.tabs.query({ active: true, currentWindow: true });
   const tab = tabs[0];
   if (!tab) throw new Error('No active tab');
 
   // Capture as blob instead of dataURL
-  const dataUrl = await browser.tabs.captureVisibleTab(tab.windowId, { 
+  const dataUrl = await api.tabs.captureVisibleTab(tab.windowId, { 
     format: 'jpeg', 
     quality: 80 
   });
