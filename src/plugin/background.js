@@ -48,10 +48,17 @@ async function setSelectedServer(url) {
   await api.storage.local.set({ [STORAGE_SELECTED]: url });
 }
 
-api.contextMenus.create({
-  id: "index-image",
-  title: "Index image to Bombus",
-  contexts: ["image"]
+api.runtime.onInstalled.addListener(() => {
+  api.contextMenus.create({
+    id: "index-image",
+    title: "Index image to Bombus",
+    contexts: ["image"]
+  }, () => {
+    // Suppress duplicate ID error if it already exists
+    if (api.runtime.lastError) {
+      console.log('Menu already exists:', api.runtime.lastError.message);
+    }
+  });
 });
 
 api.contextMenus.onClicked.addListener(async (info, tab) => {
