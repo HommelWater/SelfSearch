@@ -3,7 +3,7 @@
   "name": "Bombus Search",
   "version": "1.1.1",
   "description": "Index webpages to your Bombus server.",
-  "permissions": ["activeTab", "storage", "tabs"],
+  "permissions": ["activeTab", "storage", "tabs", "contextMenus"],
   "host_permissions": ["<all_urls>"],
   "background": {
     "service_worker": "background.js",

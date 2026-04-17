@@ -1,5 +1,7 @@
 console.log('Background script loaded');
-
+const api = typeof browser !== 'undefined' ? browser : chrome;
+console.log('Using API:', api === browser ? 'browser' : 'chrome');
+console.log('contextMenus available:', !!api.contextMenus);
 // Storage keys
 const STORAGE_SERVERS = 'bombus_servers';     // { "https://server1.com": "token1", ... }
 const STORAGE_SELECTED = 'bombus_selected';   // string (server URL)
@@ -46,6 +48,66 @@ async function setSelectedServer(url) {
   await browser.storage.local.set({ [STORAGE_SELECTED]: url });
 }
 
+api.contextMenus.create({
+  id: "index-image",
+  title: "Index image to Bombus",
+  contexts: ["image"]
+});
+
+api.contextMenus.onClicked.addListener(async (info, tab) => {
+  if (info.id !== "index-image") return;
+  
+  let blob;
+  let filename;
+  
+  // Try 1: Get from content script (already loaded in page)
+  try {
+    const response = await browser.tabs.sendMessage(tab.id, {
+      action: 'getImageBlob',
+      srcUrl: info.srcUrl
+    });
+    
+    if (response.success) {
+      blob = new Blob([response.data], { type: response.type });
+      filename = response.filename || extractFilename(info.srcUrl);
+    }
+  } catch (e) {
+    console.log('Content script failed, trying fetch:', e);
+  }
+  
+  // Try 2: Fetch directly (may fail due to CORS/auth)
+  if (!blob) {
+    try {
+      const fetchResponse = await fetch(info.srcUrl, {
+        credentials: 'include' // Send cookies if needed
+      });
+      if (!fetchResponse.ok) throw new Error(`HTTP ${fetchResponse.status}`);
+      blob = await fetchResponse.blob();
+      filename = extractFilename(info.srcUrl);
+    } catch (e) {
+      console.error('Both methods failed:', e);
+      // Notify user
+      browser.notifications.create({
+        type: 'basic',
+        title: 'Bombus Search',
+        message: 'Could not access image. It may require authentication or be blocked by CORS.'
+      });
+      return;
+    }
+  }
+  
+  await uploadBlob(blob, filename, info.srcUrl, tab);
+});
+
+function extractFilename(url) {
+  try {
+    return new URL(url).pathname.split('/').pop() || 'image.jpg';
+  } catch {
+    return 'image.jpg';
+  }
+}
+
+
 // ----- Indexing -----
 async function indexCurrentPage(apiUrl) {
   if (!apiUrl) throw new Error('No server selected. Please select a server in the popup.');
@@ -89,7 +151,7 @@ async function indexCurrentPage(apiUrl) {
 }
 
 // ----- Message handling -----
-browser.runtime.onMessage.addListener((request, sender, sendResponse) => {
+api.runtime.onMessage.addListener((request, sender, sendResponse) => {
   const handleAsync = async () => {
     try {
       switch (request.action) {
