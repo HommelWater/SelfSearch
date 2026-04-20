@@ -164,10 +164,11 @@ async def index_webpage(session_token, url, title, filename, stored, image_bytes
         'id': int(hashlib.sha256(url.encode()).hexdigest()[:16], 16) % (2**64),
         'image_hash': ""
     }
-    if not stored:
+    if stored:
         #check if it exists already?
         hash = hashlib.sha256(image_bytes).digest().hex()
         info['image_hash'] = hash
+        os.makedirs("./src/files", exist_ok=True)
         with open(f"./src/files/{hash}", "wb") as buffer:
             buffer.write(image_bytes)
     ttv.add_index(info)
