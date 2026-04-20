@@ -76,7 +76,7 @@ async function indexCurrentPage(apiUrl, stored=false) {
   formData.append('title', tab.title);
   formData.append('filename', 'screenshot.jpg');
   formData.append('stored', stored);
-  formData.append('screenshot', blob, 'screenshot.jpg');
+  formData.append('image', blob, 'screenshot.jpg');
 
   const fetchResponse = await fetch(`${apiUrl}/index`, {
     method: 'POST',
