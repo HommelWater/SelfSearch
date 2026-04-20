@@ -164,6 +164,7 @@ async def index_webpage(session_token, url, title, filename, stored, image_bytes
         'id': int(hashlib.sha256(url.encode()).hexdigest()[:16], 16) % (2**64),
         'image_hash': ""
     }
+    print(stored)
     if stored:
         #check if it exists already?
         hash = hashlib.sha256(image_bytes).digest().hex()
