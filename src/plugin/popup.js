@@ -78,10 +78,11 @@ serverSelect.addEventListener('change', async () => {
 
 // Index current page
 indexBtn.addEventListener('click', async () => {
+  const storeImage = document.getElementById('storeImageCheckbox').checked;
   indexBtn.disabled = true;
   indexBtn.textContent = 'Indexing...';
   showStatus(indexStatusDiv, 'Sending to server...', 'info');
-  const response = await browser.runtime.sendMessage({ action: 'indexPage' });
+  const response = await browser.runtime.sendMessage({ action: 'indexPage', stored:storeImage });
   indexBtn.disabled = false;
   indexBtn.textContent = '📸 INDEX THIS PAGE';
   console.log(response)

@@ -1,6 +1,11 @@
+console.log('Content script loaded');
+const api = typeof browser !== 'undefined' ? browser : chrome;
+console.log('Using API:', api === browser ? 'browser' : 'chrome');
+console.log('contextMenus available:', !!api.contextMenus);
+
 (async function() {
   async function getDeclinedOrigins() {
-    const result = await browser.storage.local.get('declinedOrigins');
+    const result = await api.storage.local.get('declinedOrigins');
     return result.declinedOrigins || [];
   }
 
@@ -8,7 +13,7 @@
     const declined = await getDeclinedOrigins();
     if (!declined.includes(origin)) {
       declined.push(origin);
-      await browser.storage.local.set({ declinedOrigins: declined });
+      await api.storage.local.set({ declinedOrigins: declined });
     }
   }
 
@@ -26,7 +31,7 @@
       const pageToken = localStorage.getItem('session') || null;
 
       // Check if we already have this server saved
-      const response = await browser.runtime.sendMessage({
+      const response = await api.runtime.sendMessage({
         action: 'checkOrigin',
         url: serverUrl
       });
@@ -38,7 +43,7 @@
         showPrompt(serverUrl, pageToken);
       } else if (response.token !== pageToken && pageToken) {
         // Token changed – update silently without prompt
-        await browser.runtime.sendMessage({
+        await api.runtime.sendMessage({
           action: 'addServer',
           url: serverUrl,
           token: pageToken
@@ -114,7 +119,7 @@
 
     // Event handlers (same logic, just use the variables directly)
     yesBtn.onclick = async () => {
-      await browser.runtime.sendMessage({
+      await api.runtime.sendMessage({
         action: 'addServer',
         url: serverOrigin,
         token: token || ''
@@ -150,47 +155,3 @@
     });
   }
 })();
-
-browser.runtime.onMessage.addListener(async (request, sender, sendResponse) => {
-  if (request.action !== 'getImageBlob') return;
-  
-  try {
-    // Find by src, or by full URL matching
-    let img = document.querySelector(`img[src="${request.srcUrl}"]`);
-    if (!img) {
-      // Try matching end of URL
-      img = Array.from(document.images).find(i => 
-        i.src === request.srcUrl || 
-        i.currentSrc === request.srcUrl
-      );
-    }
-    
-    if (!img?.complete) throw new Error('Image not loaded or not found');
-    
-    // Try to get original filename from data attribute or nearby elements
-    let filename = img.dataset.filename || 
-                   img.alt?.replace(/[^a-z0-9]/gi, '_') || 
-                   request.srcUrl.split('/').pop();
-    
-    const canvas = document.createElement('canvas');
-    canvas.width = img.naturalWidth;
-    canvas.height = img.naturalHeight;
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(img, 0, 0);
-    
-    const blob = await new Promise((resolve, reject) => 
-      canvas.toBlob(b => b ? resolve(b) : reject('Canvas empty'), 'image/png')
-    );
-    
-    const arrayBuffer = await blob.arrayBuffer();
-    sendResponse({ 
-      success: true, 
-      data: Array.from(new Uint8Array(arrayBuffer)), // Serialize for messaging
-      type: blob.type,
-      filename: filename
-    });
-  } catch (err) {
-    sendResponse({ success: false, error: err.message });
-  }
-  return true;
-});

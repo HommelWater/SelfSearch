@@ -25,6 +25,8 @@ class TantivySearchIndex:
         schema_builder.add_integer_field("timestamp", stored=True, indexed=True)
         schema_builder.add_unsigned_field("id", stored=True, indexed=False)
         schema_builder.add_unsigned_field("user_id", stored=True, indexed=False)
+        schema_builder.add_text_field("image_hash", stored=True, tokenizer_name="raw")
+        schema_builder.add_text_field("image_filename", stored=True, tokenizer_name="raw")
         self.schema = schema_builder.build()
         os.makedirs(index_path, exist_ok=True)
         self.index = tantivy.Index(self.schema, path=index_path)
@@ -46,12 +48,12 @@ class TantivySearchIndex:
         self.index.reload()
         self.searcher = self.index.searcher()
     
-    def search(self, query: str, top_k=10):
+    def search(self, query: str, top_k=10, offset=0):
         q = self.index.parse_query(
             query, ["title", "description", "direct_keywords", "related_keywords", "timestamp"]
         )
         
-        hits = self.searcher.search(q, top_k).hits
+        hits = self.searcher.search(q, top_k, offset=offset).hits
         
         results = []
         for score, doc_addr in hits:
@@ -108,14 +110,14 @@ def image_prompt(filename):
     Format as structured data.
     """
 
-async def index_webpage(session_token, url, title_or_filename, is_screenshot, image_bytes: bytes):
+async def index_webpage(session_token, url, title, filename, stored, image_bytes: bytes):
     user, session = get_user_and_session(session_token)
     msg = user_is_invalid(user, True, False)
     if msg: return msg
 
     sender_user_id = session["user_id"]
     
-    prompt = webpage_prompt(url, title_or_filename) if is_screenshot else image_prompt(title_or_filename)
+    prompt = webpage_prompt(url, title) if stored else image_prompt(filename)
     try:
         response = client.models.generate_content(
             model="gemini-2.5-flash-lite", 
@@ -151,29 +153,33 @@ async def index_webpage(session_token, url, title_or_filename, is_screenshot, im
         raise HTTPException(500, f"Failed to parse Gemini response: {e}")
     
     info = {
-        'title': result_data.get('title', title_or_filename),
+        'title': result_data.get('title', title),
+        'filename': filename,
         'description': result_data.get('description', ''),
         'direct_keywords': ' '.join(result_data.get('direct_keywords', [])),
         'related_keywords': ' '.join(result_data.get('related_keywords', [])),
         'url': url,
         'timestamp': int(time.time()),
         'user_id': sender_user_id,
-        'id': int(hashlib.sha256(url.encode()).hexdigest()[:16], 16) % (2**64)
+        'id': int(hashlib.sha256(url.encode()).hexdigest()[:16], 16) % (2**64),
+        'image_hash': ""
     }
+    if not stored:
+        #check if it exists already?
+        hash = hashlib.sha256(image_bytes).digest().hex()
+        info['image_hash'] = hash
+        with open(f"./src/files/{hash}", "wb") as buffer:
+            buffer.write(image_bytes)
     ttv.add_index(info)
-    if not is_screenshot:
-        # store it by hash name
-        hash = hashlib.sha256(image_bytes).digest()
-        id = db.add_file(hash.hex(), title_or_filename, len(image_bytes), False)
-        file_metadata = db.get_file(id)
+    
     return {"type":"success"}
     
     
-async def search(session_token, query):
+async def search(session_token, query, page=0, page_size=15):
     user, session = get_user_and_session(session_token)
     msg = user_is_invalid(user, True, False)
     if msg: return msg
-    return ttv.search(query, 15)
+    return ttv.search(query, page_size, offset=page*page_size)
 
 async def recently_indexed(session_token):
     user, session = get_user_and_session(session_token)
@@ -201,9 +207,10 @@ async def index(
     session_token: str = Form(...),
     url: str = Form(...),
     title: str = Form(...),
-    is_screenshot: bool = Form(...),
+    filename: str = Form(...),
+    stored: bool = Form(...),
     image: UploadFile = File(...)
 ):
     image_bytes = await image.read()
-    return await index_webpage(session_token, url, title, is_screenshot, image_bytes)
+    return await index_webpage(session_token, url, title, filename, stored, image_bytes)
 

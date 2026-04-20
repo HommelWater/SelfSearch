@@ -48,75 +48,8 @@ async function setSelectedServer(url) {
   await api.storage.local.set({ [STORAGE_SELECTED]: url });
 }
 
-api.runtime.onInstalled.addListener(() => {
-  api.contextMenus.create({
-    id: "index-image",
-    title: "Index image to Bombus",
-    contexts: ["image"]
-  }, () => {
-    // Suppress duplicate ID error if it already exists
-    if (api.runtime.lastError) {
-      console.log('Menu already exists:', api.runtime.lastError.message);
-    }
-  });
-});
-
-api.contextMenus.onClicked.addListener(async (info, tab) => {
-  if (info.id !== "index-image") return;
-  
-  let blob;
-  let filename;
-  
-  // Try 1: Get from content script (already loaded in page)
-  try {
-    const response = await api.tabs.sendMessage(tab.id, {
-      action: 'getImageBlob',
-      srcUrl: info.srcUrl
-    });
-    
-    if (response.success) {
-      blob = new Blob([response.data], { type: response.type });
-      filename = response.filename || extractFilename(info.srcUrl);
-    }
-  } catch (e) {
-    console.log('Content script failed, trying fetch:', e);
-  }
-  
-  // Try 2: Fetch directly (may fail due to CORS/auth)
-  if (!blob) {
-    try {
-      const fetchResponse = await fetch(info.srcUrl, {
-        credentials: 'include' // Send cookies if needed
-      });
-      if (!fetchResponse.ok) throw new Error(`HTTP ${fetchResponse.status}`);
-      blob = await fetchResponse.blob();
-      filename = extractFilename(info.srcUrl);
-    } catch (e) {
-      console.error('Both methods failed:', e);
-      // Notify user
-      api.notifications.create({
-        type: 'basic',
-        title: 'Bombus Search',
-        message: 'Could not access image. It may require authentication or be blocked by CORS.'
-      });
-      return;
-    }
-  }
-  
-  await uploadBlob(blob, filename, info.srcUrl, tab);
-});
-
-function extractFilename(url) {
-  try {
-    return new URL(url).pathname.split('/').pop() || 'image.jpg';
-  } catch {
-    return 'image.jpg';
-  }
-}
-
-
 // ----- Indexing -----
-async function indexCurrentPage(apiUrl) {
+async function indexCurrentPage(apiUrl, stored=false) {
   if (!apiUrl) throw new Error('No server selected. Please select a server in the popup.');
 
   const sessionToken = await getServerToken(apiUrl);
@@ -141,7 +74,8 @@ async function indexCurrentPage(apiUrl) {
   formData.append('session_token', sessionToken);
   formData.append('url', tab.url);
   formData.append('title', tab.title);
-  formData.append('is_screenshot', true);
+  formData.append('filename', 'screenshot.jpg');
+  formData.append('stored', stored);
   formData.append('screenshot', blob, 'screenshot.jpg');
 
   const fetchResponse = await fetch(`${apiUrl}/index`, {
@@ -178,7 +112,7 @@ api.runtime.onMessage.addListener((request, sender, sendResponse) => {
         case 'indexPage': {
           const selected = await getSelectedServer();
           if (!selected) throw new Error('No server selected');
-          const data = await indexCurrentPage(selected);
+          const data = await indexCurrentPage(selected, request.stored);
           data["success"] = true;
           return data;
         }
