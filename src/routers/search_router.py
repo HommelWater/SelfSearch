@@ -164,8 +164,7 @@ async def index_webpage(session_token, url, title, filename, stored, image_bytes
         'id': int(hashlib.sha256(url.encode()).hexdigest()[:16], 16) % (2**64),
         'image_hash': ""
     }
-    print(stored)
-    if stored or stored is "true":
+    if stored:
         #check if it exists already?
         hash = hashlib.sha256(image_bytes).digest().hex()
         info['image_hash'] = hash
@@ -175,7 +174,6 @@ async def index_webpage(session_token, url, title, filename, stored, image_bytes
     ttv.add_index(info)
     
     return {"type":"success"}
-    
     
 async def search(session_token, query, page=0, page_size=15):
     user, session = get_user_and_session(session_token)

@@ -83,7 +83,6 @@ body {
     border: 1px solid var(--color-border);
     margin-bottom: 3px;
     padding:5px;
-    max-width: 95%;
 }
 
 .search-result:hover {
