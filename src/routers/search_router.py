@@ -165,12 +165,12 @@ async def index_webpage(session_token, url, title, filename, stored, image_bytes
         'image_hash': ""
     }
     print(stored)
-    if stored:
+    if stored or stored is "true":
         #check if it exists already?
         hash = hashlib.sha256(image_bytes).digest().hex()
         info['image_hash'] = hash
-        os.makedirs("./src/files", exist_ok=True)
-        with open(f"./src/files/{hash}", "wb") as buffer:
+        os.makedirs("./files", exist_ok=True)
+        with open(f"./files/{hash}", "wb") as buffer:
             buffer.write(image_bytes)
     ttv.add_index(info)
     
