@@ -19,7 +19,7 @@ class TantivySearchIndex:
         schema_builder = tantivy.SchemaBuilder()
         schema_builder.add_text_field("title", stored=True)
         schema_builder.add_text_field("description", stored=True)
-        schema_builder.add_text_field("direct_keywords", stored=True)
+        schema_builder.add_text_field("direct_keywords", stored=True)#no stemming to support other languages for now ?
         schema_builder.add_text_field("related_keywords", stored=True)
         schema_builder.add_text_field("url", stored=True, tokenizer_name="raw")
         schema_builder.add_integer_field("timestamp", stored=True, indexed=True)
@@ -91,9 +91,10 @@ def webpage_prompt(url, title):
     Extract:
     1. Important keywords directly on the page.
     2. Important keywords relevant to the page.
-    3. A short description of the page.
+    3. A short, concise description of the specific page.
     4. A fitting title for the page.
     
+    Extract up to 25 keywords for 1 and 2. Include specific terms, technical jargon, names, and uncommon words that make this page unique.
     Format as structured data.
     """
 
