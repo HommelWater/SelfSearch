@@ -1,0 +1,77 @@
+Privacy Policy
+
+Last updated: April 22, 2026
+Overview
+
+This Privacy Policy describes how SelfSearch Indexer (“we”, “our”, or “the extension”) collects, uses, and handles user data. This extension is a client tool that allows users to index web pages by sending screenshots to a search server that they specify and control.
+
+Important note about the self‑search server:
+The extension is designed to work with a specific server implementation (“self‑search server”) that we provide. That server uses Google’s Gemini API to extract keywords from the screenshots it receives. This policy explains how the extension handles data; the server’s use of Gemini is described below.
+Information We Collect
+
+When you use the extension’s indexing feature by clicking the index button, the extension captures a screenshot of the current web page you are viewing. This screenshot is then transmitted to the server address you have configured in the extension settings for keyword extraction and indexing purposes.
+
+We do not collect, store, or process this screenshot data on our own servers. The screenshot is sent directly from your browser to your configured server.
+How Your Data Is Used
+By the extension
+
+The extension uses the screenshot solely to enable the user‑facing indexing feature you activate. It transmits the screenshot to your configured server.
+By the self‑search server (if you use our provided server implementation)
+
+The server receives the screenshot and sends it to Google’s Gemini API for the purpose of extracting keywords from the page content. Those keywords are then stored in the server’s index to enable search.
+
+Google’s Gemini API is a third‑party service. Google’s own privacy policy and data handling practices apply to that transmission. You can review Google’s privacy policy here: https://policies.google.com/privacy
+
+If you run a modified version of the server or a completely different server, the data handling may differ – you are responsible for understanding and disclosing those practices to your users.
+
+The extension itself does not send any data directly to Google or any other third party.
+Information Sharing and Transfer
+
+We do not sell, share, or transfer your data to third parties.
+
+The only transfers occur when:
+
+    You explicitly initiate indexing – the screenshot is sent to the server you have configured.
+
+    If you use our self‑search server software, that server may send the screenshot to Google’s Gemini API to perform keyword extraction.
+
+Data Security
+
+Screenshots are transmitted from your browser to your configured server using modern encryption (HTTPS/WSS). We strongly recommend that you configure your server to support HTTPS to ensure secure transmission.
+
+Transmission from the self‑search server to Google’s Gemini API is also encrypted using HTTPS.
+User Control
+
+    You choose and configure the server that receives your data.
+
+    Indexing only occurs when you actively click the index button.
+
+    You can change or remove your configured server address at any time in the extension settings.
+
+    If you run your own self‑search server, you may configure it to use a different keyword extraction method or disable Gemini entirely.
+
+Data Retention
+
+We (the extension developer) do not retain any user data.
+Data retention for screenshots and extracted keywords is determined by the operator of the server you configure. If you use our self‑search server, refer to that server’s own documentation for its retention practices.
+Changes to This Policy
+
+We may update this Privacy Policy from time to time. We will notify you of any changes by posting the new policy in the Chrome Web Store listing.
+Contact
+
+If you have questions about this Privacy Policy, please contact us at hommelwater@gmail.com.
+Limited Use Disclosure
+
+In compliance with the Chrome Web Store User Data Policy, we certify that:
+
+    We only use permissions that collect personal or sensitive user data to provide the extension’s single purpose: enabling users to index web pages via their own configured server.
+
+    We do not sell user data to third parties.
+
+    We do not use or transfer user data for purposes unrelated to the extension’s single purpose.
+
+    We do not use or transfer user data to determine creditworthiness or for lending purposes.
+
+    We do not use or transfer user data to serve personalized, re‑targeted, or interest‑based advertisements.
+
+    We do not allow humans to read user data except as required for security, legal compliance, or with explicit user consent.
