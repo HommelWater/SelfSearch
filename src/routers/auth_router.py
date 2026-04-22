@@ -180,7 +180,6 @@ async def verify_session(data: ClientRequest):
 # The invite code gets refreshed and the old one invalidated on use and when new codes get generated using this function.
 def get_invite_code(invitee_user):
     if invitee_user.get("id", ""):
-        db.increment_invite_counter(invitee_user["id"])
         code = pyotp.HOTP(invitee_user["invite_secret"]).at(
             invitee_user["invite_counter"] + 1
         )
