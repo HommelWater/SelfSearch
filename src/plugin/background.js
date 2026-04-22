@@ -49,15 +49,11 @@ async function setSelectedServer(url) {
 }
 
 // ----- Indexing -----
-async function indexCurrentPage(apiUrl, stored=false) {
+async function indexCurrentPage(apiUrl, tabUrl, tabTitle, stored=false) {
   if (!apiUrl) throw new Error('No server selected. Please select a server in the popup.');
 
   const sessionToken = await getServerToken(apiUrl);
   if (!sessionToken) throw new Error(`No session token found for ${apiUrl}. Please re-add the server.`);
-
-  const tabs = await api.tabs.query({ active: true, currentWindow: true });
-  const tab = tabs[0];
-  if (!tab) throw new Error('No active tab');
 
   // Capture as blob instead of dataURL
   const dataUrl = await api.tabs.captureVisibleTab(tab.windowId, { 
@@ -112,7 +108,7 @@ api.runtime.onMessage.addListener((request, sender, sendResponse) => {
         case 'indexPage': {
           const selected = await getSelectedServer();
           if (!selected) throw new Error('No server selected');
-          const data = await indexCurrentPage(selected, request.stored);
+          const data = await indexCurrentPage(selected, request.tabUrl, request.tabTitle, request.stored);
           data["success"] = true;
           return data;
         }

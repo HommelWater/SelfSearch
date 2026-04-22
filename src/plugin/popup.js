@@ -17,6 +17,153 @@ function showStatus(element, message, type) {
   }, 4000);
 }
 
+async function detectSelfSearchServer() {
+  const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+  if (!tab) return null;
+
+  // Function to inject (same logic)
+  const detectFunc = () => {
+    return {
+      is_selfsearch_server: localStorage.getItem('SELFSEARCH_SERVER') || false,
+      sessionToken: localStorage.getItem('session') || null,
+      origin: window.location.origin,
+      url: window.location.href
+    };
+  };
+
+  let result;
+  console.log('browser.scripting:', browser.scripting);
+  console.log('browser.tabs:', browser.tabs);
+  console.log('browser.tabs.executeScript:', browser.tabs?.executeScript);
+  console.log('chrome:', typeof chrome !== 'undefined');
+  console.log('chrome.tabs:', chrome?.tabs);
+  console.log('chrome.tabs.executeScript:', chrome?.tabs?.executeScript);
+  // Use the appropriate API
+  if (browser.scripting && browser.scripting.executeScript) {
+    // Chrome MV3
+    const results = await browser.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: detectFunc
+    });
+    result = results[0]?.result;
+  } else if (browser.tabs.executeScript) {
+    // Firefox (and fallback)
+    const results = await browser.tabs.executeScript(tab.id, {
+      code: `(${detectFunc.toString()})();`
+    });
+    result = results[0];
+  } else {
+    console.error('No scripting API available');
+  }
+  console.log(result)
+  if (result && result.is_selfsearch_server && result.sessionToken) {
+    return {
+      is_selfsearch_server: result.is_selfsearch_server,
+      token: result.sessionToken,
+      pageUrl: result.url
+    };
+  }
+  return null;
+}
+
+async function showPrompt() {
+  const {is_selfsearch_server, token, serverOrigin} = await detectSelfSearchServer();
+  if (!is_selfsearch_server){
+    return;
+  }
+  // Remove existing modal if any
+  const existing = document.getElementById('ext-add-site-modal');
+  if (existing) existing.remove();
+
+  // Create modal container
+  const modal = document.createElement('div');
+  modal.id = 'ext-add-site-modal';
+  modal.style.cssText = `
+    position: fixed; top:0; left:0; width:100%; height:100%;
+    background:rgba(0,0,0,0.6); z-index:100000;
+    display:flex; align-items:center; justify-content:center;
+    font-family:system-ui, sans-serif;
+  `;
+
+  // Create box
+  const box = document.createElement('div');
+  box.style.cssText = `
+    background:#CADCAE; padding:20px; min-width:320px;
+    box-shadow:0 4px 12px rgba(0,0,0,0.3); color:black;
+    border: 1px solid #222;
+  `;
+
+  // Create heading with border-left style
+  const heading = document.createElement('h3');
+  heading.style.cssText = 'margin:0 0 12px 0; border-left:3px solid #EDA35A; padding-left:8px;';
+  heading.textContent = '➕ Add this search server?';
+  box.appendChild(heading);
+
+  // Server URL paragraph
+  const urlPara = document.createElement('p');
+  urlPara.style.marginBottom = '8px';
+  urlPara.innerHTML = '<strong>Server URL:</strong><br>'; // Static HTML is OK
+  const urlText = document.createTextNode(serverOrigin);
+  urlPara.appendChild(urlText);
+  box.appendChild(urlPara);
+
+  // Description paragraph
+  const descPara = document.createElement('p');
+  descPara.style.cssText = 'margin-bottom:12px; font-size:0.85rem;';
+  descPara.textContent = 'The extension will use this server to index pages.';
+  box.appendChild(descPara);
+
+  // Button container
+  const btnDiv = document.createElement('div');
+  btnDiv.style.cssText = 'display:flex; gap:8px; margin-top:16px;';
+
+  // Add Server button
+  const yesBtn = document.createElement('button');
+  yesBtn.id = 'ext-yes-btn';
+  yesBtn.style.cssText = 'flex:1; background:#EDA35A; border:none; padding:8px; cursor:pointer;';
+  yesBtn.textContent = 'Add Server';
+  btnDiv.appendChild(yesBtn);
+
+  // Never button
+  const noBtn = document.createElement('button');
+  noBtn.id = 'ext-no-btn';
+  noBtn.style.cssText = 'flex:1; background:#E1E9C9; border:none; padding:8px; cursor:pointer;';
+  noBtn.textContent = 'Never for this site';
+  btnDiv.appendChild(noBtn);
+
+  box.appendChild(btnDiv);
+  modal.appendChild(box);
+  document.body.appendChild(modal);
+
+  // Event handlers (same logic, just use the variables directly)
+  yesBtn.onclick = async () => {
+    await browser.runtime.sendMessage({
+      action: 'addServer',
+      url: serverOrigin,
+      token: token || ''
+    });
+    modal.remove();
+    showNotification(`✅ Server "${serverOrigin}" added!`);
+  };
+
+  noBtn.onclick = async () => {
+    await addDeclinedOrigin(serverOrigin);
+    modal.remove();
+  };
+}
+function showNotification(msg) {
+  const div = document.createElement('div');
+  div.textContent = msg;
+  div.style.cssText = `
+    position:fixed; bottom:20px; right:20px; background:#EDA35A;
+    color:black; padding:8px 16px; z-index:100001;
+    font-family:system-ui; font-size:14px; box-shadow:0 2px 6px rgba(0,0,0,0.2);
+  `;
+  document.body.appendChild(div);
+  setTimeout(() => div.remove(), 3000);
+}
+
+
 // Load servers and populate dropdown
 async function loadServers() {
   const response = await browser.runtime.sendMessage({ action: 'getServers' });
@@ -82,7 +229,8 @@ indexBtn.addEventListener('click', async () => {
   indexBtn.disabled = true;
   indexBtn.textContent = 'Indexing...';
   showStatus(indexStatusDiv, 'Sending to server...', 'info');
-  const response = await browser.runtime.sendMessage({ action: 'indexPage', stored:storeImage });
+  const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+  const response = await browser.runtime.sendMessage({ action: 'indexPage', tabUrl:tab.url, tabTitle:tab.title, stored:storeImage });
   indexBtn.disabled = false;
   indexBtn.textContent = '📸 INDEX THIS PAGE';
   console.log(response)
@@ -97,3 +245,4 @@ indexBtn.addEventListener('click', async () => {
 
 // Initial load
 loadServers();
+showPrompt();

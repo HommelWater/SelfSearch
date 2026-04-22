@@ -3,8 +3,8 @@
   "name": "SelfSearch Indexer",
   "version": "1.1.3",
   "description": "Index webpages to your SelfSearch server.",
-  "permissions": ["activeTab", "storage", "tabs"],
-  "host_permissions": ["<all_urls>"],
+  "permissions": ["activeTab", "storage", "scripting"],
+  "optional_host_permissions": ["https://*/*"],
   "icons": {
     "96": "icon96.png"
   },

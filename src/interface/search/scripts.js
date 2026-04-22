@@ -90,7 +90,7 @@ function addRecentlyIndexed(title, description, url){
 }
 
 async function onLoad(){
-    window.postMessage({ type: 'CHECK_EXTENSION_USER' }, '*');
+    localStorage.setItem("SELFSEARCH_SERVER", "true");
     document.getElementById('search-form').addEventListener('submit', search);
     document.getElementById('settings-button').addEventListener('click', ()=>location.href="/settings")
     await requestRecentlyIndexed();
