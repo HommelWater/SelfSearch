@@ -1,10 +1,13 @@
 {
   "manifest_version": 3,
-  "name": "Bombus Search",
-  "version": "1.1.2",
-  "description": "Index webpages to your Bombus server.",
-  "permissions": ["activeTab", "storage", "tabs", "contextMenus"],
+  "name": "SelfSearch Indexer",
+  "version": "1.1.3",
+  "description": "Index webpages to your SelfSearch server.",
+  "permissions": ["activeTab", "storage", "tabs"],
   "host_permissions": ["<all_urls>"],
+  "icons": {
+    "96": "icon96.png"
+  },
   
   "background": {
     "service_worker": "background.js",
