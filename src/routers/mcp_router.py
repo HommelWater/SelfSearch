@@ -17,7 +17,7 @@ TOOLS = [
             "properties": {
                 "query": {"type": "string", "description": "Search query"},
                 "page": {"type": "integer", "description": "Page number (0-indexed)", "default": 0},
-                "page_size": {"type": "integer", "description": "Results per page", "default": 15}
+                "page_size": {"type": "integer", "description": "Results per page", "default": 5}
             },
             "required": ["query"]
         }
