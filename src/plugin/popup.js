@@ -32,12 +32,6 @@ async function detectSelfSearchServer() {
   };
 
   let result;
-  console.log('browser.scripting:', browser.scripting);
-  console.log('browser.tabs:', browser.tabs);
-  console.log('browser.tabs.executeScript:', browser.tabs?.executeScript);
-  console.log('chrome:', typeof chrome !== 'undefined');
-  console.log('chrome.tabs:', chrome?.tabs);
-  console.log('chrome.tabs.executeScript:', chrome?.tabs?.executeScript);
   // Use the appropriate API
   if (browser.scripting && browser.scripting.executeScript) {
     // Chrome MV3
@@ -55,22 +49,40 @@ async function detectSelfSearchServer() {
   } else {
     console.error('No scripting API available');
   }
-  console.log(result)
   if (result && result.is_selfsearch_server && result.sessionToken) {
     return {
       is_selfsearch_server: result.is_selfsearch_server,
       token: result.sessionToken,
-      pageUrl: result.url
+      serverOrigin: result.url
     };
   }
   return null;
 }
 
-async function showPrompt() {
-  const {is_selfsearch_server, token, serverOrigin} = await detectSelfSearchServer();
-  if (!is_selfsearch_server){
-    return;
+  async function getProcessedOrigins() {
+    const result = await browser.storage.local.get('declinedOrigins');
+    return result.declinedOrigins || [];
   }
+
+  async function addProcessedOrigin(origin) {
+    const declined = await getProcessedOrigins();
+    if (!declined.includes(origin)) {
+      declined.push(origin);
+      await browser.storage.local.set({ declinedOrigins: declined });
+    }
+  }
+
+
+async function showPrompt() {
+  
+  const d = await detectSelfSearchServer();
+  if (!d) return;
+  const {is_selfsearch_server, token, serverOrigin} = d;
+  if (!is_selfsearch_server) return;
+
+  const declined = await getProcessedOrigins();
+  if (declined.includes(serverOrigin)) return;
+  
   // Remove existing modal if any
   const existing = document.getElementById('ext-add-site-modal');
   if (existing) existing.remove();
@@ -143,26 +155,15 @@ async function showPrompt() {
       token: token || ''
     });
     modal.remove();
-    showNotification(`✅ Server "${serverOrigin}" added!`);
+    showStatus(indexStatusDiv, `Server "${serverOrigin}" added!`, 'success');
+    await addProcessedOrigin(serverOrigin);
   };
 
   noBtn.onclick = async () => {
-    await addDeclinedOrigin(serverOrigin);
+    await addProcessedOrigin(serverOrigin);
     modal.remove();
   };
 }
-function showNotification(msg) {
-  const div = document.createElement('div');
-  div.textContent = msg;
-  div.style.cssText = `
-    position:fixed; bottom:20px; right:20px; background:#EDA35A;
-    color:black; padding:8px 16px; z-index:100001;
-    font-family:system-ui; font-size:14px; box-shadow:0 2px 6px rgba(0,0,0,0.2);
-  `;
-  document.body.appendChild(div);
-  setTimeout(() => div.remove(), 3000);
-}
-
 
 // Load servers and populate dropdown
 async function loadServers() {
@@ -230,10 +231,9 @@ indexBtn.addEventListener('click', async () => {
   indexBtn.textContent = 'Indexing...';
   showStatus(indexStatusDiv, 'Sending to server...', 'info');
   const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
-  const response = await browser.runtime.sendMessage({ action: 'indexPage', tabUrl:tab.url, tabTitle:tab.title, stored:storeImage });
+  const response = await browser.runtime.sendMessage({ action: 'indexPage', tab:tab, stored:storeImage });
   indexBtn.disabled = false;
   indexBtn.textContent = '📸 INDEX THIS PAGE';
-  console.log(response)
   if (response.type === "failure") {
     showStatus(indexStatusDiv, `❌ Error: ${response.data.notification}`, 'error');
   } else if (!response.success){

@@ -1,7 +1,7 @@
 console.log('Background script loaded');
 const api = typeof browser !== 'undefined' ? browser : chrome;
 console.log('Using API:', api === browser ? 'browser' : 'chrome');
-console.log('contextMenus available:', !!api.contextMenus);
+
 // Storage keys
 const STORAGE_SERVERS = 'bombus_servers';     // { "https://server1.com": "token1", ... }
 const STORAGE_SELECTED = 'bombus_selected';   // string (server URL)
@@ -17,6 +17,13 @@ async function saveServers(servers) {
 }
 
 async function addServer(url, token) {
+  const origin = new URL(url).origin;
+  const granted = await browser.permissions.request({
+    origins: [`${origin}/*`]
+  });
+  if (!granted) {
+    throw new Error('User denied host permission');
+  }
   const servers = await getServers();
   servers[url] = token;
   await saveServers(servers);
@@ -49,7 +56,7 @@ async function setSelectedServer(url) {
 }
 
 // ----- Indexing -----
-async function indexCurrentPage(apiUrl, tabUrl, tabTitle, stored=false) {
+async function indexCurrentPage(apiUrl, tab, stored=false) {
   if (!apiUrl) throw new Error('No server selected. Please select a server in the popup.');
 
   const sessionToken = await getServerToken(apiUrl);
@@ -108,7 +115,7 @@ api.runtime.onMessage.addListener((request, sender, sendResponse) => {
         case 'indexPage': {
           const selected = await getSelectedServer();
           if (!selected) throw new Error('No server selected');
-          const data = await indexCurrentPage(selected, request.tabUrl, request.tabTitle, request.stored);
+          const data = await indexCurrentPage(selected, request.tab, request.stored);
           data["success"] = true;
           return data;
         }

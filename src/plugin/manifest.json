@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "SelfSearch Indexer",
-  "version": "1.1.3",
+  "version": "1.1.6",
   "description": "Index webpages to your SelfSearch server.",
   "permissions": ["activeTab", "storage", "scripting"],
   "optional_host_permissions": ["https://*/*"],
@@ -13,15 +13,7 @@
     "service_worker": "background.js",
     "scripts": ["background.js"]
   },
-  
-  "content_scripts": [
-    {
-      "matches": ["<all_urls>"],
-      "js": ["content.js"],
-      "run_at": "document_start"
-    }
-  ],
-  
+    
   "action": {
     "default_popup": "popup.html",
     "default_title": "Index this page"
@@ -29,8 +21,7 @@
   
   "browser_specific_settings": {
     "gecko": {
-      "id": "hommelwater@gmail.com",
-      "strict_min_version": "109.0"
+      "id": "hommelwater@gmail.com"
     }
   }
 }
