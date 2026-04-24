@@ -50,6 +50,7 @@ async function search(e){
 }
 
 function addSearchResult(title, description, url){
+    console.log(url);
     const resultsElement = document.getElementById("search-results");
     const result = document.createElement("div");
     result.className = "search-result";
@@ -73,10 +74,10 @@ function addSearchResult(title, description, url){
         e.stopPropagation();
         const token = localStorage.getItem("session");
         const json = await apiRequest(`/search/delete`, "POST", JSON.stringify({
-            session_token: token,
-            url: url
+            url: url,
+            session_token: token
         }));
-        result.innerHTML = `${json}`;
+        result.remove();
     })
 
     result.replaceChildren(resultHeader, resultDescription);
