@@ -67,7 +67,7 @@ function addSearchResult(title, description, url){
     deleteButton.style.marginLeft = "auto";
     deleteButton.innerText = "🗑️";
 
-    resultHeader.replaceChildren(deleteButton);
+    resultHeader.appendChild(deleteButton);
 
     deleteButton.addEventListener('click', async ()=>{
         const token = localStorage.getItem("session");
