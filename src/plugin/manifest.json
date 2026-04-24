@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "SelfSearch Indexer",
-  "version": "1.1.6",
+  "version": "1.1.7",
   "description": "Index webpages to your SelfSearch server.",
   "permissions": ["activeTab", "storage", "scripting"],
   "optional_host_permissions": ["https://*/*"],
