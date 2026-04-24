@@ -228,7 +228,6 @@ class DeleteRequest(BaseModel):
     url:str
     session_token:str
 
-
 class RecentIndexRequest(BaseModel):
     session_token:str
 

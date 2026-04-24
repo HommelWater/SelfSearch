@@ -73,7 +73,7 @@ function addSearchResult(title, description, url){
         e.stopPropagation();
         const token = localStorage.getItem("session");
         const json = await apiRequest(`/search/delete`, "POST", JSON.stringify({
-            session: token,
+            session_token: token,
             url: url
         }));
         result.innerHTML = `${json}`;
