@@ -66,6 +66,7 @@ function addSearchResult(title, description, url){
     const deleteButton = document.createElement('button');
     deleteButton.className = "button";
     deleteButton.style.marginLeft = "auto";
+    deleteButton.style.padding = "4px";
     deleteButton.innerText = "🗑️";
 
     resultHeader.appendChild(deleteButton);
