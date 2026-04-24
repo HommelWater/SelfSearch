@@ -37,6 +37,11 @@ class TantivySearchIndex:
         self.cache_ptr = 0
     
     def add_index(self, info):
+        url = info["url"]
+        existing_doc = self.get_by_url(url)
+        if existing_doc:
+            self.delete_by_url(url)
+        
         writer = self.index.writer()
         doc = tantivy.Document.from_dict(info)
         writer.add_document(doc)
@@ -48,6 +53,24 @@ class TantivySearchIndex:
         self.index.reload()
         self.searcher = self.index.searcher()
     
+    def get_by_url(self, url: str):
+        query = self.index.parse_query(f'url:"{url}"', ["url"])
+        result = self.searcher.search(query, 1)
+        
+        if result.hits:
+            score, doc_addr = result.hits[0]
+            return self.searcher.doc(doc_addr).to_dict()
+        return None
+    
+    def delete_by_url(self, url: str):
+        writer = self.index.writer()
+        writer.delete_query(self.index.parse_query(f'url:"{url}"', ["url"]))
+        writer.commit()
+        writer.wait_merging_threads()
+        self.index.reload()
+        self.searcher = self.index.searcher()
+        return True
+
     def search(self, query: str, top_k=10, offset=0):
         q = self.index.parse_query(
             query, ["title", "description", "direct_keywords", "related_keywords", "timestamp"]
@@ -178,6 +201,13 @@ async def index_webpage(session_token, url, title, filename, stored, image_bytes
     
     return {"type":"success"}
     
+async def delete_url(session_token, url):
+    user, session = get_user_and_session(session_token)
+    msg = user_is_invalid(user, True, False)
+    if msg: return msg
+    s = ttv.delete_by_url(url)
+    return {"deleted": s}
+
 async def search(session_token, query, page=0, page_size=15):
     user, session = get_user_and_session(session_token)
     msg = user_is_invalid(user, True, False)
@@ -194,6 +224,11 @@ class SearchRequest(BaseModel):
     query:str
     session_token:str
 
+class DeleteRequest(BaseModel):
+    url:str
+    session_token:str
+
+
 class RecentIndexRequest(BaseModel):
     session_token:str
 
@@ -204,6 +239,10 @@ async def s(request_data: SearchRequest):
 @router.post("/recent")
 async def s(request_data: RecentIndexRequest):
     return await recently_indexed(request_data.session_token)
+
+@router.post("/delete")
+async def s(request_data: DeleteRequest):
+    return await delete_url(request_data.session_token, request_data.url)
 
 @router.post("/index")
 async def index(

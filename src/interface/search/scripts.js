@@ -55,12 +55,28 @@ function addSearchResult(title, description, url){
     result.className = "search-result";
 
     const resultHeader = document.createElement('div');
-    resultHeader.className = "result-header";
+    resultHeader.className = "result-title";
     resultHeader.innerText = title;
 
     const resultDescription = document.createElement('div');
     resultDescription.className = "result-description";
     resultDescription.innerText = description;
+
+    const deleteButton = document.createElement('button');
+    deleteButton.className = "button";
+    deleteButton.style.marginLeft = "auto";
+    deleteButton.innerText = "🗑️";
+
+    resultHeader.replaceChildren(deleteButton);
+
+    deleteButton.addEventListener('click', async ()=>{
+        const token = localStorage.getItem("session");
+        const json = await apiRequest(`/search/delete`, "POST", JSON.stringify({
+            session: token,
+            url: url
+        }));
+        result.innerHTML = `${json}`;
+    })
 
     result.replaceChildren(resultHeader, resultDescription);
     result.addEventListener('click', () => {
