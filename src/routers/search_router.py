@@ -81,7 +81,7 @@ class TantivySearchIndex:
         results = []
         for score, doc_addr in hits:
             doc = self.searcher.doc(doc_addr).to_dict()
-            t = {"title":doc["title"], "description":doc["description"], "timestamp":doc["timestamp"]}
+            t = {"title":doc["title"], "description":doc["description"], "timestamp":doc["timestamp"], "url":doc["url"]}
 
             results.append({
                 'score': score,
