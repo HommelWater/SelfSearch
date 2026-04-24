@@ -69,7 +69,8 @@ function addSearchResult(title, description, url){
 
     resultHeader.appendChild(deleteButton);
 
-    deleteButton.addEventListener('click', async ()=>{
+    deleteButton.addEventListener('click', async (e)=>{
+        e.stopPropagation();
         const token = localStorage.getItem("session");
         const json = await apiRequest(`/search/delete`, "POST", JSON.stringify({
             session: token,
