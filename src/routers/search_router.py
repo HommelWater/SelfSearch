@@ -64,7 +64,7 @@ class TantivySearchIndex:
     
     def delete_by_url(self, url: str):
         writer = self.index.writer()
-        writer.delete_query(self.index.parse_query(f'url:"{url}"', ["url"]))
+        writer.delete_documents_by_term("url", url)
         writer.commit()
         writer.wait_merging_threads()
         self.index.reload()
