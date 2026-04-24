@@ -149,6 +149,13 @@ async function showPrompt() {
 
   // Event handlers (same logic, just use the variables directly)
   yesBtn.onclick = async () => {
+    const origin = new URL(serverOrigin).origin;
+    const granted = await browser.permissions.request({
+      origins: [`${origin}/*`]
+    });
+    if (!granted) {
+      throw new Error('User denied host permission');
+    }
     await browser.runtime.sendMessage({
       action: 'addServer',
       url: serverOrigin,

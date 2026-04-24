@@ -17,13 +17,6 @@ async function saveServers(servers) {
 }
 
 async function addServer(url, token) {
-  const origin = new URL(url).origin;
-  const granted = await browser.permissions.request({
-    origins: [`${origin}/*`]
-  });
-  if (!granted) {
-    throw new Error('User denied host permission');
-  }
   const servers = await getServers();
   servers[url] = token;
   await saveServers(servers);
