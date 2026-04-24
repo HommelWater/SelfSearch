@@ -3,6 +3,7 @@ src/data.db
 src/files
 src/interface/files
 src/tantivy_index
+src/plugin/*.zip
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
