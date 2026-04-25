@@ -1,8 +1,7 @@
-SelfSearch
+## SelfSearch
 
 SelfSearch is a self-hosted search engine. A browser extension captures web pages you visit. A server stores and indexes them locally. You can search your browsing history via web UI, API, or AI agents (MCP protocol).
-Quick start
-text
+## Quick start
 
 git clone https://github.com/HommelWater/SelfSearch.git
 cd SelfSearch
@@ -20,14 +19,8 @@ Extension location: src/plugin/
     Firefox: about:debugging -> This Firefox -> Load Temporary Add-on -> select src/plugin/manifest.json
 
 Click the extension icon on any page, select your server, then click "Index this page".
-Configuration
 
-Edit .env in the project root.
-Variable	Description
-GOOGLE_API_KEY	Required for keyword extraction (Gemini)
-DOMAIN	Your server domain
-APP_PORT	FastAPI port (default 8000)
-Searching
+## Searching
 
     Web UI: /search
 
@@ -35,15 +28,10 @@ Searching
 
     MCP endpoint for AI agents: /mcp (Bearer token authentication)
 
-Multi-user
+## Multi-user
 
 Admins can generate invite codes, add users, and delete users (with recursive deletion). Login uses TOTP.
-Tech stack
 
-Backend: FastAPI + Tantivy + SQLite
-Frontend: HTML/CSS/JS
-Extension: Manifest V3
-Proxy: Nginx + Let's Encrypt
-License
+## License
 
 See LICENSE file.
