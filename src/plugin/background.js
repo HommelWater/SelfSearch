@@ -81,7 +81,7 @@ async function indexCurrentPage(apiUrl, tab, stored=false) {
 
   if (!fetchResponse.ok) {
     const errorText = await fetchResponse.text();
-    throw new Error(`Indexing failed: ${fetchResponse.status} - ${errorText}`);
+    throw new Error(`Indexing failed: ${fetchResponse.status} - ${errorText} (try updating the token by visiting the search page and opening the extension)`);
   }
 
   return await fetchResponse.json();

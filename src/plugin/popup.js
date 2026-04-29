@@ -73,13 +73,10 @@ async function addProcessedOrigin(origin) {
 }
 
 async function removeProcessedOrigin(origin) {
-  const declined = await getProcessedOrigins();
-  if (!declined.includes(origin)) {
-    delete declined[origin];
-    await browser.storage.local.set({ declinedOrigins: declined });
-  }
+  let declined = await getProcessedOrigins();
+  declined = declined.filter(a=>a !== origin);
+  await browser.storage.local.set({ declinedOrigins: declined });
 }
-
 
 async function showPrompt() {
   
@@ -88,11 +85,9 @@ async function showPrompt() {
   const {is_selfsearch_server, token, serverOrigin} = d;
   if (!is_selfsearch_server) return;
 
-  const servers = await browser.runtime.sendMessage({
-      action: 'getServers',
-    }).servers;
+  const servers = await browser.runtime.sendMessage({action: 'getServers'}).servers;
   
-  if (servers.includes(serverOrigin)){
+  if (servers && (serverOrigin in servers)){
     await browser.runtime.sendMessage({
       action: 'addServer',
       url: serverOrigin,
