@@ -18,6 +18,9 @@ Extension location: src/plugin/
 
     Firefox: about:debugging -> This Firefox -> Load Temporary Add-on -> select src/plugin/manifest.json
 
+Or visit their respective add-on/extension pages:
+    https://addons.mozilla.org/en-US/firefox/addon/selfsearch-indexer/
+
 Click the extension icon on any page, select your server, then click "Index this page".
 
 ## Searching
