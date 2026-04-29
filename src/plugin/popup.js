@@ -88,9 +88,21 @@ async function showPrompt() {
   const {is_selfsearch_server, token, serverOrigin} = d;
   if (!is_selfsearch_server) return;
 
+  const servers = await browser.runtime.sendMessage({
+      action: 'getServers',
+    }).servers;
+  
+  if (servers.includes(serverOrigin)){
+    await browser.runtime.sendMessage({
+      action: 'addServer',
+      url: serverOrigin,
+      token: token || ''
+    });
+  }
+
   const declined = await getProcessedOrigins();
   if (declined.includes(serverOrigin)) return;
-  
+
   // Remove existing modal if any
   const existing = document.getElementById('ext-add-site-modal');
   if (existing) existing.remove();
