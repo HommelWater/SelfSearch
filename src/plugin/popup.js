@@ -59,18 +59,26 @@ async function detectSelfSearchServer() {
   return null;
 }
 
-  async function getProcessedOrigins() {
-    const result = await browser.storage.local.get('declinedOrigins');
-    return result.declinedOrigins || [];
-  }
+async function getProcessedOrigins() {
+  const result = await browser.storage.local.get('declinedOrigins');
+  return result.declinedOrigins || [];
+}
 
-  async function addProcessedOrigin(origin) {
-    const declined = await getProcessedOrigins();
-    if (!declined.includes(origin)) {
-      declined.push(origin);
-      await browser.storage.local.set({ declinedOrigins: declined });
-    }
+async function addProcessedOrigin(origin) {
+  const declined = await getProcessedOrigins();
+  if (!declined.includes(origin)) {
+    declined.push(origin);
+    await browser.storage.local.set({ declinedOrigins: declined });
   }
+}
+
+async function removeProcessedOrigin(origin) {
+  const declined = await getProcessedOrigins();
+  if (!declined.includes(origin)) {
+    delete declined[origin];
+    await browser.storage.local.set({ declinedOrigins: declined });
+  }
+}
 
 
 async function showPrompt() {
@@ -215,6 +223,7 @@ removeBtn.addEventListener('click', async () => {
   const selected = serverSelect.value;
   if (!selected) return;
   const response = await browser.runtime.sendMessage({ action: 'removeServer', url: selected });
+  await removeProcessedOrigin(selected);
   if (response.success) {
     showStatus(indexStatusDiv, `Removed ${selected}`, 'success');
     await loadServers();

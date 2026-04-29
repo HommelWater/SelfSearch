@@ -10,8 +10,8 @@ router = APIRouter()
 
 TOOLS = [
     {
-        "name": "SelfSearch",
-        "description": "Personal keyword search engine, with user indexed webpages.",
+        "name": "PersonalKeywordSearch",
+        "description": "Personal keyword based search engine, with user-indexed webpages.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -84,13 +84,15 @@ async def mcp_endpoint(request: Request):
         arguments = params.get("arguments", {})
 
         try:
-            if tool_name == "SelfSearch":
+            if tool_name == "PersonalKeywordSearch":
                 result = await search(
                     session_token=session_token,
                     query=arguments["query"],
                     page=arguments.get("page", 0),
                     page_size=arguments.get("page_size", 15)
                 )
+            if tool_name == "PersonalSearchIndex":
+                result = await index_webpage(session_token, )
             else:
                 return jsonrpc_error(req_id, -32601, f"Unknown tool: {tool_name}")
 
