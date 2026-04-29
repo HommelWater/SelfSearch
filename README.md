@@ -4,7 +4,9 @@ SelfSearch is a self-hosted search engine. A browser extension captures web page
 ## Quick start
 
 git clone https://github.com/HommelWater/SelfSearch.git
+
 cd SelfSearch
+
 sudo bash setup.sh
 
 Follow the prompts (domain, email, Google API key). The script installs the backend, Nginx, SSL, and a systemd service.
