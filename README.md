@@ -9,7 +9,12 @@ SelfSearch is a self-hosted search engine. A browser extension captures web page
 
 Follow the prompts (domain, email, Google API key). The script installs the backend, Nginx, SSL, and a systemd service.
 
-After installation, visit your domain, log in as admin with TOTP, and start indexing pages.
+After installation, visit your domain, sign up using the 'admin' username and scan the QR code with an authenticator app, then log in as admin with TOTP, and start indexing pages. 
+
+To add new user accounts, find the invite code in the '/settings' page of your site. 
+Simply enter the username of the new user, and the invite code, add the QR code to an authenticator app. 
+Then, sign in using the TOTP code given by the authenticator app to register and sign in as the new user.
+
 Browser extension
 
 Extension location: src/plugin/
