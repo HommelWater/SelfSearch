@@ -25,7 +25,7 @@
       text-transform: uppercase;
       margin-bottom: 6px;
     }
-    input, button {
+    input:not([type="checkbox"]):not([type="radio"]), button {
       width: 100%;
       padding: 8px;
       margin: 4px 0;
@@ -39,6 +39,15 @@
       appearance: none;
       -webkit-appearance: none;
       -moz-appearance: none;
+    }
+    input[type="checkbox"] {
+      appearance: auto;
+      -webkit-appearance: auto;
+      -moz-appearance: auto;
+      width: 14px;
+      height: 14px;
+      flex: none;
+      margin: 0;
     }
     button {
       background: #EDA35A;
@@ -101,7 +110,7 @@
     <label>📸 INDEX THIS PAGE</label>
     <button id="indexBtn">📸 INDEX THIS PAGE</button>
     <label style="display:flex; align-items:center; gap:8px; margin:8px 0;">
-      <input type="checkbox" id="autoIndexCheckbox" style="width:auto;">
+      <input type="checkbox" id="autoIndexCheckbox">
       <span style="font-weight:normal; text-transform:none;">Auto-index pages I spend time on <small style="display:inline; margin:0;">(URL + title only)</small></span>
     </label>
     <label>KEYWORDS FOR THIS PAGE <span style="font-weight:normal; text-transform:none;">(optional, comma/space separated)</span></label>
