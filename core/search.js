@@ -55,11 +55,13 @@ export async function deleteDoc(url) {
 
   const doc = await docsStore.get(url);
   let removed = false;
+  let wasOwned = false;
   if (doc) {
     await unindexTerms(indexStore, doc);
     await docsStore.delete(url);
     if (doc.image_hash) await tx.objectStore('images').delete(doc.image_hash);
     removed = true;
+    wasOwned = true;
   }
   await tx.done;
 
@@ -84,7 +86,7 @@ export async function deleteDoc(url) {
     }
   }
 
-  return removed;
+  return { removed, wasOwned };
 }
 
 // --- Search ---------------------------------------------------------------

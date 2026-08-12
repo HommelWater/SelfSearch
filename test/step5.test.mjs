@@ -53,8 +53,10 @@ mock.module(new URL('../lib/nostr-deps.js', import.meta.url), {
 const { saveDoc, deleteDoc } = await import('../core/search.js');
 const { getDB, settings } = await import('../core/db.js');
 const mesh = await import('../core/mesh.js');
+const { signWireDoc } = await import('./helpers.mjs');
 
-const FRIEND = realDeps.nip19.npubEncode(realDeps.getPublicKey(realDeps.generateSecretKey()));
+const skFriend = realDeps.generateSecretKey();
+const FRIEND = realDeps.nip19.npubEncode(realDeps.getPublicKey(skFriend));
 
 async function cachedDocs() {
   const db = await getDB();
@@ -65,20 +67,18 @@ test('docCache: backfill stores peer docs, served back in queries', async () => 
   await mesh.handleMeshRequest({ p2p: true, op: 'status' });
   await mesh.handleMeshRequest({ p2p: true, op: 'addFriend', npub: FRIEND });
 
-  // Friend proactively backfills a doc about "sourdough".
+  // Friend proactively backfills a signed doc about "sourdough".
   const now = Math.floor(Date.now() / 1000);
-  lastP2P.deliverFrom(FRIEND, {
-    type: 'backfill',
-    since: 0,
-    docs: [{
-      url: 'https://friend.example/recipe',
-      title: 'Sourdough Recipe',
-      description: 'how to make sourdough bread',
-      direct_keywords: 'sourdough bread baking',
-      related_keywords: '',
-      timestamp: now
-    }]
+  const friendDoc = signWireDoc(realDeps, skFriend, {
+    authorNpub: FRIEND,
+    url: 'https://friend.example/recipe',
+    title: 'Sourdough Recipe',
+    description: 'how to make sourdough bread',
+    direct_keywords: 'sourdough bread baking',
+    related_keywords: '',
+    timestamp: now
   });
+  lastP2P.deliverFrom(FRIEND, { type: 'backfill', since: 0, docs: [friendDoc] });
   await new Promise(r => setTimeout(r, 20));
 
   const cached = await cachedDocs();
@@ -109,14 +109,12 @@ test('docCache: backfill stores peer docs, served back in queries', async () => 
 test('docCache: LRU eviction removes oldest beyond the cap', async () => {
   await settings.set('cacheCap', 2);
   const base = Math.floor(Date.now() / 1000);
-  lastP2P.deliverFrom(FRIEND, {
-    type: 'backfill', since: 0,
-    docs: [
-      { url: 'https://a.example/1', title: 'alpha', description: 'alpha one', direct_keywords: 'alpha', related_keywords: '', timestamp: base },
-      { url: 'https://b.example/2', title: 'beta', description: 'beta two', direct_keywords: 'beta', related_keywords: '', timestamp: base + 1 },
-      { url: 'https://c.example/3', title: 'gamma', description: 'gamma three', direct_keywords: 'gamma', related_keywords: '', timestamp: base + 2 }
-    ]
-  });
+  const docs = [
+    { url: 'https://a.example/1', title: 'alpha', description: 'alpha one', direct_keywords: 'alpha', related_keywords: '', timestamp: base },
+    { url: 'https://b.example/2', title: 'beta', description: 'beta two', direct_keywords: 'beta', related_keywords: '', timestamp: base + 1 },
+    { url: 'https://c.example/3', title: 'gamma', description: 'gamma three', direct_keywords: 'gamma', related_keywords: '', timestamp: base + 2 }
+  ].map(d => signWireDoc(realDeps, skFriend, { authorNpub: FRIEND, ...d }));
+  lastP2P.deliverFrom(FRIEND, { type: 'backfill', since: 0, docs });
   await new Promise(r => setTimeout(r, 30));
 
   const remaining = (await cachedDocs()).map(c => c.url).sort();

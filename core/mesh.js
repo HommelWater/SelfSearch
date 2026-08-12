@@ -13,6 +13,8 @@ const FILTER_KIND = 25011;  // routing bloom filter gossip: { bloom, termCount, 
 const PROFILE_KIND = 25012; // peer profile: { name, avatar, bio }
 const INVITE_KIND = 25013;  // friend invite: { invitee, message }
 const ACCEPT_KIND = 25014;  // invite accept: { inviter, invitee }
+const TOMBSTONE_KIND = 25016; // signed delete: { url, author }
+const TOMBSTONE_CAP = 5000;
 const FILTER_INTERVAL = 30 * 1000;
 const GOSSIP_SINCE = 3600;  // seconds of past gossip to replay on subscribe
 const MAX_HOPS_CAP = 5;
@@ -93,6 +95,97 @@ function verifyEvent(e) {
   } catch {
     return false;
   }
+}
+
+// --- Signed docs ------------------------------------------------------------
+
+// Deterministic JSON (sorted keys) so signatures are reproducible everywhere.
+function canonicalJson(obj) {
+  if (Array.isArray(obj)) return '[' + obj.map(canonicalJson).join(',') + ']';
+  if (obj && typeof obj === 'object') {
+    return '{' + Object.keys(obj).sort()
+      .map(k => `"${k}":${canonicalJson(obj[k])}`).join(',') + '}';
+  }
+  return JSON.stringify(obj);
+}
+
+function docPayload(d) {
+  return {
+    authorNpub: state.npub,
+    url: d.url,
+    title: d.title || '',
+    description: d.description || '',
+    direct_keywords: d.direct_keywords || '',
+    related_keywords: d.related_keywords || '',
+    timestamp: d.timestamp || 0
+  };
+}
+
+function signDoc(doc) {
+  const msg = sha256(new TextEncoder().encode(canonicalJson(docPayload(doc))));
+  return bytesToHex(schnorr.sign(msg, state.sk));
+}
+
+// Verify a wire doc ({...fields, authorNpub, sig}). Returns true only for a
+// valid author signature over the canonical payload.
+function verifyDoc(d) {
+  try {
+    const pkHex = nip19.decode(d.authorNpub).data;
+    const payload = {
+      authorNpub: d.authorNpub,
+      url: d.url,
+      title: d.title || '',
+      description: d.description || '',
+      direct_keywords: d.direct_keywords || '',
+      related_keywords: d.related_keywords || '',
+      timestamp: d.timestamp || 0
+    };
+    const msg = sha256(new TextEncoder().encode(canonicalJson(payload)));
+    return schnorr.verify(hexToBytes(d.sig), msg, hexToBytes(pkHex));
+  } catch {
+    return false;
+  }
+}
+
+// --- Tombstones (signed deletes) --------------------------------------------
+
+// A doc is hidden while a tombstone from its author is newer than (or equal to)
+// it. If the author re-indexes the page later, the newer doc wins again.
+async function isTombstoned(authorNpub, url, docTs) {
+  const db = await getDB();
+  const t = await db.get('tombstones', `${authorNpub}|${url}`);
+  return !!(t && t.ts >= (docTs || 0));
+}
+
+async function applyTombstone(authorNpub, url, ts) {
+  const db = await getDB();
+  await db.put('tombstones', { id: `${authorNpub}|${url}`, authorNpub, url, ts });
+  let removed = false;
+  const cached = await db.getAll('docCache');
+  for (const c of cached) {
+    if (c.authorNpub === authorNpub && c.url === url) {
+      await db.delete('docCache', c.id);
+      removed = true;
+    }
+  }
+  if (removed) state.cacheDirty = true;
+  // Keep the tombstone store bounded (LRU by timestamp).
+  const rows = await db.getAll('tombstones');
+  if (rows.length > TOMBSTONE_CAP) {
+    rows.sort((a, b) => a.ts - b.ts);
+    await db.delete('tombstones', rows[0].id);
+  }
+}
+
+async function handleTombstoneEvent(e) {
+  try {
+    const { url, author } = JSON.parse(e.content);
+    const authorNpub = nip19.npubEncode(e.pubkey);
+    if (!url || (author && author !== authorNpub)) return;
+    if (!verifyEvent(e)) return;
+    await applyTombstone(authorNpub, url, e.created_at);
+    log(`tombstone ${url} by ${authorNpub.slice(0, 12)}`);
+  } catch { /* ignore malformed */ }
 }
 
 async function publishTrust(trusted, maxHops) {
@@ -205,7 +298,9 @@ async function cachePeerDocs(docs) {
   let maxTs = 0;
   let idx = 0;
   for (const d of docs) {
-    if (!d || !d.url || !d.authorNpub) continue;
+    if (!d || !d.url || !d.authorNpub || !d.sig) continue;
+    if (!verifyDoc(d)) continue;                    // tampered / unsigned → drop
+    if (await isTombstoned(d.authorNpub, d.url, d.timestamp)) continue; // author deleted it
     const terms = new Set([
       ...tokenize(d.title || ''),
       ...tokenize(d.description || ''),
@@ -222,7 +317,8 @@ async function cachePeerDocs(docs) {
       related_keywords: d.related_keywords || '',
       timestamp: d.timestamp || Math.floor(now / 1000),
       addedAt: now + idx++, // distinct within a batch → deterministic LRU order
-      terms: [...terms]
+      terms: [...terms],
+      sig: d.sig
     });
     if (d.timestamp > maxTs) maxTs = d.timestamp;
   }
@@ -286,6 +382,8 @@ function onGossipEvent(e) {
     handleInviteEvent(e).catch(() => {});
   } else if (e.kind === ACCEPT_KIND) {
     handleAcceptEvent(e).catch(() => {});
+  } else if (e.kind === TOMBSTONE_KIND) {
+    handleTombstoneEvent(e).catch(() => {});
   }
 }
 
@@ -353,7 +451,7 @@ async function handleQuery(sender, msg) {
   // waiting instead of sitting out the full collection window. Serve our own
   // docs plus anything we have cached from peers (redundancy).
   const local = terms.length ? await localSearch(query, { limit: msg.limit || 10 }) : [];
-  const results = local.map(d => ({ ...toWireDoc(d), authorNpub: state.npub }));
+  const results = local.map(d => ({ ...toWireDoc(d), authorNpub: state.npub, sig: signDoc(d) }));
   if (terms.length) {
     const db = await getDB();
     const cached = await db.getAll('docCache');
@@ -362,7 +460,7 @@ async function handleQuery(sender, msg) {
       results.push({
         url: c.url, title: c.title, description: c.description,
         direct_keywords: c.direct_keywords || '', related_keywords: c.related_keywords || '',
-        timestamp: c.timestamp, matchCount: 1, authorNpub: c.authorNpub
+        timestamp: c.timestamp, matchCount: 1, authorNpub: c.authorNpub, sig: c.sig
       });
       if (results.length >= (msg.limit || 10) + 20) break;
     }
@@ -418,7 +516,7 @@ async function handleBackfillRequest(sender, msg) {
   const docs = (await db.getAllFromIndex('docs', 'timestamp'))
     .filter(d => d.timestamp > since)
     .slice(-BACKFILL_MAX)
-    .map(d => ({ ...toWireDoc(d), authorNpub: state.npub, timestamp: d.timestamp }));
+    .map(d => ({ ...toWireDoc(d), authorNpub: state.npub, timestamp: d.timestamp, sig: signDoc(d) }));
   sendSafe(sender, { type: 'backfill', since, docs });
 }
 
@@ -452,6 +550,10 @@ function handlePeerMessage(npub, msg) {
     handleBackfillRequest(npub, msg).catch(err => console.warn('[mesh] backfill request error', err));
   } else if (msg.type === 'backfill') {
     handleBackfill(npub, msg);
+  } else if (msg.type === 'tombstone') {
+    // Data-channel tombstone: the sender is the author, so it only affects
+    // cached docs attributed to them.
+    applyTombstone(npub, msg.url, Math.floor(Date.now() / 1000)).catch(() => {});
   }
 }
 
@@ -617,7 +719,7 @@ export async function startMesh() {
     });
     state.sub = state.pool.subscribeMany(
       RELAYS,
-      { kinds: [TRUST_KIND, FILTER_KIND, PROFILE_KIND, INVITE_KIND, ACCEPT_KIND], since: Math.floor(Date.now() / 1000) - GOSSIP_SINCE },
+      { kinds: [TRUST_KIND, FILTER_KIND, PROFILE_KIND, INVITE_KIND, ACCEPT_KIND, TOMBSTONE_KIND], since: Math.floor(Date.now() / 1000) - GOSSIP_SINCE },
       { onevent: onGossipEvent }
     );
 
@@ -778,6 +880,25 @@ export async function handleMeshRequest(request) {
     case 'refreshCache': {
       // The local store changed under us (e.g. a delete) — rebuild the cached
       // terms and re-gossip the routing filter.
+      state.cacheDirty = true;
+      await publishFilter();
+      return { success: true };
+    }
+
+    case 'publishTombstone': {
+      const url = String(request.url || '');
+      if (!url) return { success: false, error: 'Missing url' };
+      const ts = Math.floor(Date.now() / 1000);
+      const event = finalizeEvent({
+        kind: TOMBSTONE_KIND,
+        created_at: ts,
+        tags: [],
+        content: JSON.stringify({ url, author: state.npub })
+      }, state.sk);
+      await Promise.allSettled(state.pool.publish(RELAYS, event));
+      // Fast path to connected friends, then apply locally.
+      for (const [npub] of state.p2p.connections) sendSafe(npub, { type: 'tombstone', url });
+      await applyTombstone(state.npub, url, ts);
       state.cacheDirty = true;
       await publishFilter();
       return { success: true };

@@ -35,7 +35,7 @@ test('deleteDoc removes the doc from the index, queryCache, and docCache', async
     terms: ['alpha']
   });
 
-  const removed = await deleteDoc('https://x.example/1');
+  const { removed } = await deleteDoc('https://x.example/1');
   assert.equal(removed, true);
 
   assert.equal(await db.get('docs', 'https://x.example/1'), undefined, 'own doc deleted');

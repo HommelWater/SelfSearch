@@ -52,8 +52,10 @@ mock.module(new URL('../lib/nostr-deps.js', import.meta.url), {
 
 const { getDB, settings } = await import('../core/db.js');
 const mesh = await import('../core/mesh.js');
+const { signWireDoc } = await import('./helpers.mjs');
 
-const FRIEND = realDeps.nip19.npubEncode(realDeps.getPublicKey(realDeps.generateSecretKey()));
+const skFriend = realDeps.generateSecretKey();
+const FRIEND = realDeps.nip19.npubEncode(realDeps.getPublicKey(skFriend));
 
 test('setProfile stores locally and gossips a PROFILE_KIND event', async () => {
   await mesh.handleMeshRequest({ p2p: true, op: 'status' });
@@ -70,11 +72,13 @@ test('setProfile stores locally and gossips a PROFILE_KIND event', async () => {
 
 test('getPeers returns profiles and recently-indexed peer docs', async () => {
   const now = Math.floor(Date.now() / 1000);
-  // Friend backfills a doc -> cached.
-  lastP2P.deliverFrom(FRIEND, {
-    type: 'backfill', since: 0,
-    docs: [{ url: 'https://friend.example/post', title: 'Weekend Baking', description: 'sourdough on saturday', direct_keywords: 'sourdough baking', related_keywords: '', timestamp: now }]
+  // Friend backfills a signed doc -> cached.
+  const friendDoc = signWireDoc(realDeps, skFriend, {
+    authorNpub: FRIEND,
+    url: 'https://friend.example/post', title: 'Weekend Baking', description: 'sourdough on saturday',
+    direct_keywords: 'sourdough baking', related_keywords: '', timestamp: now
   });
+  lastP2P.deliverFrom(FRIEND, { type: 'backfill', since: 0, docs: [friendDoc] });
   // A peer profile we heard about via gossip.
   const db = await getDB();
   await db.put('profiles', { npub: FRIEND, name: 'Alice', avatar: '🌻', bio: '', ts: now });

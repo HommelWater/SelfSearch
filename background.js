@@ -130,15 +130,17 @@ async function handle(request) {
       return { success: true, results: await getRecent(request.limit) };
 
     case 'deleteDoc': {
-      const deleted = await deleteDoc(request.url);
-      // Tell the mesh to rebuild its cached-terms filter after a deletion.
-      const req = { p2p: true, op: 'refreshCache' };
+      const { removed, wasOwned } = await deleteDoc(request.url);
+      // Publishing a tombstone propagates the delete to peers' caches. It only
+      // matters for docs we own; the mesh drops cached copies + rebuilds its
+      // filter in both cases.
+      const req = { p2p: true, op: wasOwned ? 'publishTombstone' : 'refreshCache', url: request.url };
       if (!IS_CHROME_SW) {
         handleMeshRequest(req).catch(() => {});
       } else {
         api.runtime.sendMessage(req).catch(() => {});
       }
-      return { success: true, deleted };
+      return { success: true, deleted: removed };
     }
 
     case 'getSettings':
