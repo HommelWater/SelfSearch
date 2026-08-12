@@ -5,6 +5,7 @@
   "description": "Personal P2P search engine. Index pages you visit, search them locally, and share with a trusted network.",
   "permissions": ["activeTab", "storage", "offscreen", "alarms", "scripting", "tabs"],
   "host_permissions": [],
+  "optional_host_permissions": ["<all_urls>"],
   "background": {
     "service_worker": "background.js",
     "type": "module",

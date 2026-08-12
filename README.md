@@ -31,9 +31,11 @@ Load the extension unpacked:
    `{title, description, keywords, url, timestamp}`. Add optional keywords of
    your own in the popup before indexing.
 2. **Auto-index (optional).** Tick *Auto-index pages I spend time on* in the
-   popup — pages you keep open for a few seconds get indexed by URL + title
-   automatically. Revisiting a page whose title changed refreshes it (but never
-   overwrites a manually-indexed page).
+   popup — pages you keep open for a few seconds get indexed automatically.
+   By default it stores URL + title; click *Enable full page keywords* (one
+   optional permission, requested at runtime) to also extract keywords and a
+   description from the page content. Revisiting a changed page refreshes it
+   (but never overwrites a manually-indexed page).
 3. **Search.** Type `ss <query>` in the address bar (omnibox), or open the
    extension popup → *Open Search*. Results are ranked, tagged (local / peer),
    and shown with the page's stored timestamp. Empty query shows your

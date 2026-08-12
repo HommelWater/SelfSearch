@@ -111,8 +111,12 @@
     <button id="indexBtn">📸 INDEX THIS PAGE</button>
     <label style="display:flex; align-items:center; gap:8px; margin:8px 0;">
       <input type="checkbox" id="autoIndexCheckbox">
-      <span style="font-weight:normal; text-transform:none;">Auto-index pages I spend time on <small style="display:inline; margin:0;">(URL + title only)</small></span>
+      <span style="font-weight:normal; text-transform:none;">Auto-index pages I spend time on</span>
     </label>
+    <div id="autoIndexFull">
+      <button id="fullKeywordsBtn" class="secondary" style="margin:4px 0;">🔓 Enable full page keywords</button>
+      <div id="fullKeywordsStatus" class="status"></div>
+    </div>
     <label>KEYWORDS FOR THIS PAGE <span style="font-weight:normal; text-transform:none;">(optional, comma/space separated)</span></label>
     <input type="text" id="keywordsInput" placeholder="e.g. recipe, sourdough" autocomplete="off">
     <div id="indexStatus" class="status"></div>

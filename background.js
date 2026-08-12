@@ -204,6 +204,31 @@ function isIndexable(url) {
   return /^https?:\/\//i.test(url || '');
 }
 
+// Do we have permission to read this site's content (via the optional
+// <all_urls> grant)? Full keyword extraction needs it; otherwise title only.
+async function hasHostAccess(url) {
+  try {
+    const origin = new URL(url).origin;
+    return await api.permissions.contains({ origins: [`${origin}/*`] });
+  } catch {
+    return false;
+  }
+}
+
+async function saveTitleOnly(url, title) {
+  const terms = tokenize(title || '');
+  await saveDoc({
+    url,
+    title: String(title || '').trim(),
+    description: '',
+    direct_keywords: [...new Set(terms)].slice(0, 30).join(' '),
+    related_keywords: '',
+    timestamp: Math.floor(Date.now() / 1000),
+    image_hash: '',
+    auto: true
+  });
+}
+
 async function indexVisit(visit) {
   try {
     if (!(await settings.get('autoIndex'))) return;
@@ -220,17 +245,18 @@ async function indexVisit(visit) {
       const fresh = Date.now() / 1000 - existing.timestamp < REINDEX_COOLDOWN;
       if (!changed || fresh) return;
     }
-    const terms = tokenize(title);
-    await saveDoc({
-      url: visit.url,
-      title,
-      description: '',
-      direct_keywords: [...new Set(terms)].slice(0, 30).join(' '),
-      related_keywords: '',
-      timestamp: Math.floor(Date.now() / 1000),
-      image_hash: '',
-      auto: true
-    });
+    // Full page extraction (keywords + description) when we have host access;
+    // otherwise fall back to URL + title only.
+    if (await hasHostAccess(visit.url)) {
+      try {
+        const tab = await api.tabs.get(visit.tabId);
+        await captureAndIndex(tab, { screenshot: false, auto: true });
+      } catch {
+        await saveTitleOnly(visit.url, title); // tab already closed
+      }
+    } else {
+      await saveTitleOnly(visit.url, title);
+    }
     console.log('[autoindex]', existing ? 'updated' : 'added', visit.url);
   } catch (e) {
     console.warn('[autoindex] failed', e);

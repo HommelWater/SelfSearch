@@ -11,6 +11,9 @@ const autoIndexCheckbox = document.getElementById('autoIndexCheckbox');
 const indexStatus = document.getElementById('indexStatus');
 const openSearchBtn = document.getElementById('openSearchBtn');
 
+const fullKeywordsBtn = document.getElementById('fullKeywordsBtn');
+const fullKeywordsStatus = document.getElementById('fullKeywordsStatus');
+
 const meshStatusDiv = document.getElementById('meshStatus');
 const npubDisplay = document.getElementById('npubDisplay');
 const maxHopsInput = document.getElementById('maxHopsInput');
@@ -31,7 +34,32 @@ async function loadSettings() {
   const resp = await api.runtime.sendMessage({ action: 'getSettings' });
   if (!resp?.success) return;
   autoIndexCheckbox.checked = !!resp.settings.autoIndex;
+  await updateFullKeywords();
 }
+
+async function updateFullKeywords() {
+  let granted = false;
+  try { granted = await api.permissions.contains({ origins: ['<all_urls>'] }); } catch { /* unsupported */ }
+  if (granted) {
+    fullKeywordsBtn.style.display = 'none';
+    fullKeywordsStatus.textContent = 'Full page keywords enabled (reads page content).';
+    fullKeywordsStatus.className = 'status success';
+  } else {
+    fullKeywordsBtn.style.display = '';
+    fullKeywordsStatus.textContent = 'Auto-index stores URL + title only.';
+    fullKeywordsStatus.className = 'status info';
+  }
+}
+
+fullKeywordsBtn.addEventListener('click', async () => {
+  let granted = false;
+  try { granted = await api.permissions.request({ origins: ['<all_urls>'] }); } catch { /* unsupported */ }
+  await updateFullKeywords();
+  if (!granted) {
+    fullKeywordsStatus.textContent = 'Permission denied — auto-index stays title-only.';
+    fullKeywordsStatus.className = 'status error';
+  }
+});
 
 autoIndexCheckbox.addEventListener('change', () => {
   api.runtime.sendMessage({ action: 'saveSettings', values: { autoIndex: autoIndexCheckbox.checked } });
