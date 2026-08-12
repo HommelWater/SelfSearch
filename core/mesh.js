@@ -601,16 +601,42 @@ async function handleBackfillRequest(sender, msg) {
   sendSafe(sender, { type: 'backfill', since, docs });
 }
 
-// We asked a friend to backfill — store what they sent.
+// We asked a peer to backfill — store what they sent. A peer with our own npub
+// is another of our devices: restore their copy into OUR index (multi-device
+// sync, last-write-wins by timestamp) instead of the peer cache.
 function handleBackfill(sender, msg) {
   if (!Array.isArray(msg.docs)) return;
-  cachePeerDocs(msg.docs.map(d => ({ ...d, authorNpub: sender })))
+  const isDevice = sender === state.npub;
+  const task = isDevice
+    ? syncDocsFromDevice(msg.docs)
+    : cachePeerDocs(msg.docs.map(d => ({ ...d, authorNpub: sender })));
+  task
     .then(() => {
       let maxTs = 0;
       for (const d of msg.docs) if (d.timestamp > maxTs) maxTs = d.timestamp;
       if (maxTs) state.lastBackfillBy.set(sender, maxTs);
     })
-    .catch(err => console.warn('[mesh] cache backfill failed', err));
+    .catch(err => console.warn('[mesh] backfill failed', err));
+}
+
+// Multi-device sync: restore docs authored by our own identity (sent by one of
+// our devices) into our own index. LWW by timestamp; deletes (tombstones) win
+// against older copies.
+async function syncDocsFromDevice(docs) {
+  const db = await getDB();
+  for (const d of docs) {
+    if (!d || !d.url || !d.sig) continue;
+    if (!verifyDoc(d)) continue;
+    if (await isTombstoned(state.npub, d.url, d.timestamp)) continue; // we deleted it
+    const local = await db.get('docs', d.url);
+    if (local && (local.timestamp || 0) >= (d.timestamp || 0)) continue; // local is newer/equal
+    await saveDoc({
+      url: d.url, title: d.title || '', description: d.description || '',
+      direct_keywords: d.direct_keywords || '', related_keywords: d.related_keywords || '',
+      timestamp: d.timestamp || Math.floor(Date.now() / 1000)
+    });
+  }
+  if (docs.length) log(`[sync] merged ${docs.length} docs from device`);
 }
 
 // Proactive sync for direct friends (distance 1): request their docs, sending
@@ -789,7 +815,7 @@ export async function startMesh() {
     peerFilters: new Map(), peerFilterObjs: new Map(), filterSeq: 0,
     pendingQueries: new Map(), pendingRelay: new Map(), seenQueries: new Map(),
     lastBackfillBy: new Map(), cachedTerms: new Set(), cacheDirty: true,
-    repairing: new Map(),
+    repairing: new Map(), syncDevices: false,
     started: false, starting: false, lastError: null
   };
   state.starting = true;
@@ -797,6 +823,7 @@ export async function startMesh() {
     await ensureKeys();
     state.friends = (await settings.get('friends')) || [];
     state.maxHops = Number(await settings.get('maxHops')) || 2;
+    state.syncDevices = !!(await settings.get('syncDevices'));
     await loadEdges();
 
     state.pool = new SimplePool({
@@ -823,10 +850,16 @@ export async function startMesh() {
       },
       onDisconnect: () => {},
       onMessage: handlePeerMessage,
-      peers: new Set(state.friends)
+      peers: new Set(state.friends),
+      allowSelf: state.syncDevices
     });
     for (const f of state.friends) {
       try { state.p2p.connect(f); } catch { /* skip bad npub */ }
+    }
+    // Multi-device sync: link to other devices sharing our identity key.
+    if (state.syncDevices) {
+      state.p2p.addPeer(state.npub);
+      state.p2p.connect(state.npub);
     }
 
     state.syncTimer = setInterval(() => syncNow(), FILTER_INTERVAL);
@@ -857,6 +890,13 @@ export function stopMesh() {
   try { state.p2p?.close(); } catch { /* ignore */ }
   try { state.pool?.close(RELAYS); } catch { /* ignore */ }
   state.started = false;
+}
+
+// Restart the mesh from scratch with the identity currently in settings.
+async function rekey() {
+  stopMesh();
+  state = null;
+  await startMesh();
 }
 export async function handleMeshRequest(request) {
   if (!state || !state.started) {
@@ -1019,6 +1059,35 @@ export async function handleMeshRequest(request) {
       return { success: true, profile };
     }
 
+    case 'setIdentity': {
+      const nsec = String(request.nsec || '').trim().toLowerCase();
+      if (!/^[0-9a-f]{64}$/.test(nsec)) return { success: false, error: 'Invalid nsec (must be 64 hex characters)' };
+      const sameKey = nsec === (await settings.get('nostrSecretKey'));
+      await settings.set('nostrSecretKey', nsec);
+      await settings.set('syncDevices', true);
+      if (sameKey) {
+        state.syncDevices = true;
+        state.p2p.addPeer(state.npub);
+        state.p2p.connect(state.npub);
+      } else {
+        await rekey();
+      }
+      return { success: true, npub: state.npub, syncDevices: true };
+    }
+
+    case 'setSyncDevices': {
+      const on = !!request.enabled;
+      await settings.set('syncDevices', on);
+      state.syncDevices = on;
+      if (on) {
+        state.p2p.addPeer(state.npub);
+        state.p2p.connect(state.npub);
+      } else {
+        state.p2p.removePeer(state.npub);
+      }
+      return { success: true, enabled: on };
+    }
+
     case 'getPeers': {
       const graph = computeTrustGraph();
       const db = await getDB();
@@ -1044,6 +1113,7 @@ export async function handleMeshRequest(request) {
         peers: {
           npub: state.npub,
           ownProfile: (await settings.get('profile')) || {},
+          syncDevices: state.syncDevices,
           friends: state.friends,
           connected: [...state.p2p.connections.keys()],
           reachable: [...graph.keys()].filter(n => n !== state.npub).map(n => ({ npub: n, depth: graph.get(n).depth })),

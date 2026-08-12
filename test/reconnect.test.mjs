@@ -103,3 +103,21 @@ test('a stale re-offer of an in-flight handshake is re-answered (no reconnect de
   b.close();
   Date.now = origNow;
 });
+
+test('allowSelf links to our own npub but skips our own signals', async () => {
+  const sk = realDeps.bytesToHex(realDeps.generateSecretKey());
+  const pk = realDeps.getPublicKey(realDeps.hexToBytes(sk));
+  const npub = realDeps.nip19.npubEncode(pk);
+
+  const inst = new NostrP2P(sk, { allowSelf: true });
+  // A device may initiate a connection to its own npub (multi-device sync).
+  inst.connect(npub);
+  assert.equal(inst.sessions.has(npub), true, 'device may connect to its own npub');
+
+  // The relay echoes our own published signal back — it must be ignored so we
+  // never handshake with ourselves.
+  const id = inst._sendSignal(pk, { type: 'offer', ots: 1, sdp: { type: 'offer', sdp: 'x' } });
+  await inst.handleSignal({ id, pubkey: pk, kind: 25000, created_at: 1, tags: [['p', pk]], content: 'x', sig: 'x' });
+  assert.equal(inst.sessions.size, 1, 'own signal must not create a second session');
+  inst.close();
+});

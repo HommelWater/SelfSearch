@@ -508,6 +508,13 @@ const profileBio = document.getElementById('profileBio');
 const saveProfileBtn = document.getElementById('saveProfileBtn');
 const profileStatus = document.getElementById('profileStatus');
 
+const identityNpub = document.getElementById('identityNpub');
+const identityNsec = document.getElementById('identityNsec');
+const setIdentityBtn = document.getElementById('setIdentityBtn');
+const syncDevicesCheckbox = document.getElementById('syncDevicesCheckbox');
+const syncNowBtn = document.getElementById('syncNowBtn');
+const syncStatus = document.getElementById('syncStatus');
+
 function showStatus(el, message, type) {
   el.textContent = message;
   el.className = `status ${type}`;
@@ -520,6 +527,17 @@ async function loadProfile() {
   profileName.value = own.name || '';
   profileAvatar.value = own.avatar || '';
   profileBio.value = own.bio || '';
+  identityNpub.value = resp.peers.npub || '';
+  syncDevicesCheckbox.checked = !!resp.peers.syncDevices;
+  renderSyncStatus(resp.peers);
+}
+
+function renderSyncStatus(peers) {
+  const linked = peers.connected.includes(peers.npub);
+  syncStatus.textContent = peers.syncDevices
+    ? (linked ? 'Device sync on — linked to your other devices.' : 'Device sync on — other devices will link when online.')
+    : 'Device sync off.';
+  syncStatus.className = linked ? 'status success' : 'status info';
 }
 
 saveProfileBtn.addEventListener('click', async () => {
@@ -533,6 +551,36 @@ saveProfileBtn.addEventListener('click', async () => {
   } else {
     showStatus(profileStatus, `❌ ${resp?.error || 'Failed to save'}`, 'error');
   }
+});
+
+setIdentityBtn.addEventListener('click', async () => {
+  const nsec = identityNsec.value.trim();
+  if (!nsec) return;
+  setIdentityBtn.disabled = true;
+  const resp = await p2p('setIdentity', { nsec });
+  setIdentityBtn.disabled = false;
+  if (resp?.success) {
+    identityNsec.value = '';
+    showStatus(syncStatus, 'Identity set — syncing with your devices.', 'success');
+    loadProfile();
+  } else {
+    showStatus(syncStatus, `❌ ${resp?.error || 'Failed to set identity'}`, 'error');
+  }
+});
+
+syncDevicesCheckbox.addEventListener('change', async () => {
+  const resp = await p2p('setSyncDevices', { enabled: syncDevicesCheckbox.checked });
+  if (resp?.success) loadProfile();
+});
+
+syncNowBtn.addEventListener('click', async () => {
+  const resp = await p2p('getPeers');
+  const peers = resp && resp.success ? resp.peers : {};
+  renderSyncStatus(peers);
+  showStatus(syncStatus, 'Syncing…', 'info');
+  await p2p('reconcileDocs');
+  const after = await p2p('getPeers');
+  renderSyncStatus(after && after.success ? after.peers : {});
 });
 
 loadProfile();

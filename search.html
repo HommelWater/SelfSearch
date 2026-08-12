@@ -196,6 +196,19 @@
     <input id="profileBio" type="text" maxlength="200">
     <button id="saveProfileBtn">Save profile</button>
     <div id="profileStatus" class="status"></div>
+
+    <h3>Sync across devices</h3>
+    <label>Your identity (npub)</label>
+    <input id="identityNpub" type="text" readonly>
+    <label>nsec <span style="font-weight:normal; text-transform:none;">(enter the same nsec on each device to sync)</span></label>
+    <input id="identityNsec" type="password" placeholder="64 hex characters" autocomplete="off">
+    <button id="setIdentityBtn">Save identity &amp; sync</button>
+    <label style="display:flex; align-items:center; gap:8px; margin:8px 0;">
+      <input type="checkbox" id="syncDevicesCheckbox">
+      <span style="font-weight:normal; text-transform:none;">Sync with my other devices</span>
+    </label>
+    <button id="syncNowBtn" class="secondary">Sync now</button>
+    <div id="syncStatus" class="status"></div>
   </section>
 
   <script type="module" src="search.js"></script>

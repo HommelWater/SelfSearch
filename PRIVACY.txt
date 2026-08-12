@@ -32,6 +32,9 @@ User Control
     Indexing only occurs when you actively click the extension icon.
     You can delete any indexed page from the search page.
     Peer-to-peer sharing is opt-in and controlled per peer.
+    Multi-device sync is opt-in: entering your nsec lets your devices sync your
+    index. Your nsec IS your identity — anyone with it can index, delete, or
+    sync as you, so keep it secret.
     You can uninstall the extension to remove all locally stored data.
 
 Data Retention

@@ -149,6 +149,15 @@ eviction, which is never repaired). The node asks connected peers for a signed
 copy (`doc_request`/`doc_response`), verifies it, and restores it. Because docs
 are signed, a restored copy is guaranteed authentic.
 
+**Multi-device sync:** entering the same **nsec** on another device makes it the
+same identity (npub). With `allowSelf`, the mesh links devices sharing a key
+(relay-echoed own signals are skipped so a device never handshakes with
+itself; same-npub glare is broken by the offer event id). A backfill from a
+same-identity peer is restored into our **own** index (not the cache),
+last-write-wins by doc timestamp, with tombstones (deletes) winning against
+older copies. Incremental backfill keeps devices converged; the manifest +
+repair machinery handles fresh joins.
+
 ## Query flow (search)
 
 1. Normalize query → **check `queryCache`** first. Hit → return immediately
