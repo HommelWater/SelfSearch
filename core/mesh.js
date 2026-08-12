@@ -11,6 +11,8 @@ import { BloomFilter } from './bloom.js';
 const TRUST_KIND = 25010;   // trust declaration: { truster, trusted, maxHops }
 const FILTER_KIND = 25011;  // routing bloom filter gossip: { bloom, termCount, seq }
 const PROFILE_KIND = 25012; // peer profile: { name, avatar, bio }
+const INVITE_KIND = 25013;  // friend invite: { invitee, message }
+const ACCEPT_KIND = 25014;  // invite accept: { inviter, invitee }
 const FILTER_INTERVAL = 30 * 1000;
 const GOSSIP_SINCE = 3600;  // seconds of past gossip to replay on subscribe
 const MAX_HOPS_CAP = 5;
@@ -120,6 +122,51 @@ async function publishProfile() {
 async function storePeerProfile(npub, profile, ts) {
   const db = await getDB();
   await db.put('profiles', { npub, name: profile.name || '', avatar: profile.avatar || '', bio: profile.bio || '', ts });
+}
+
+// Add someone to our trust web (friend + edge + connect). Used by direct add,
+// invite acceptance, and receiving an invite accept.
+async function addTrusted(npub) {
+  if (!state.friends.includes(npub)) {
+    state.friends.push(npub);
+    await settings.set('friends', state.friends);
+  }
+  await storeEdge(state.npub, npub, state.maxHops);
+  await publishTrust(npub, state.maxHops);
+  state.p2p.addPeer(npub);
+  state.p2p.connect(npub);
+}
+
+// A friend invite arrives via relays: verify it's addressed to us + self-signed.
+async function handleInviteEvent(e) {
+  try {
+    const { invitee, message } = JSON.parse(e.content);
+    if (!invitee || invitee !== state.npub) return; // not addressed to us
+    if (!verifyEvent(e)) return;
+    const inviter = nip19.npubEncode(e.pubkey);
+    const db = await getDB();
+    await db.put('invites', {
+      id: `in|${inviter}`, dir: 'in', npub: inviter,
+      message: String(message || '').slice(0, 140),
+      ts: Date.now(), status: 'pending'
+    });
+    log(`invite from ${inviter.slice(0, 12)}`);
+  } catch { /* ignore malformed */ }
+}
+
+// An invite accept arrives via relays: the invitee accepted OUR invite, so add
+// them (we already wanted the connection).
+async function handleAcceptEvent(e) {
+  try {
+    const { inviter, invitee } = JSON.parse(e.content);
+    const accepter = nip19.npubEncode(e.pubkey);
+    if (inviter !== state.npub || invitee !== accepter) return;
+    if (!verifyEvent(e)) return;
+    await addTrusted(accepter);
+    const db = await getDB();
+    await db.delete('invites', `out|${accepter}`);
+    log(`invite accepted by ${accepter.slice(0, 12)}`);
+  } catch { /* ignore malformed */ }
 }
 
 async function publishFilter() {
@@ -235,6 +282,10 @@ function onGossipEvent(e) {
       if (!verifyEvent(e)) return;
       storePeerProfile(e.pubkey, profile, e.created_at);
     } catch { /* ignore malformed */ }
+  } else if (e.kind === INVITE_KIND) {
+    handleInviteEvent(e).catch(() => {});
+  } else if (e.kind === ACCEPT_KIND) {
+    handleAcceptEvent(e).catch(() => {});
   }
 }
 
@@ -566,7 +617,7 @@ export async function startMesh() {
     });
     state.sub = state.pool.subscribeMany(
       RELAYS,
-      { kinds: [TRUST_KIND, FILTER_KIND, PROFILE_KIND], since: Math.floor(Date.now() / 1000) - GOSSIP_SINCE },
+      { kinds: [TRUST_KIND, FILTER_KIND, PROFILE_KIND, INVITE_KIND, ACCEPT_KIND], since: Math.floor(Date.now() / 1000) - GOSSIP_SINCE },
       { onevent: onGossipEvent }
     );
 
@@ -654,14 +705,7 @@ export async function handleMeshRequest(request) {
       const npub = String(request.npub || '').trim().toLowerCase();
       if (!/^npub1[0-9a-z]{58}$/.test(npub)) return { success: false, error: 'Invalid npub' };
       if (npub === state.npub) return { success: false, error: 'That is your own key' };
-      if (!state.friends.includes(npub)) {
-        state.friends.push(npub);
-        await settings.set('friends', state.friends);
-      }
-      await storeEdge(state.npub, npub, state.maxHops);
-      await publishTrust(npub, state.maxHops);
-      state.p2p.addPeer(npub);
-      state.p2p.connect(npub);
+      await addTrusted(npub);
       return { success: true, friends: state.friends };
     }
 
@@ -684,6 +728,40 @@ export async function handleMeshRequest(request) {
       state.maxHops = n;
       await settings.set('maxHops', n);
       return { success: true, maxHops: n };
+    }
+
+    case 'sendInvite': {
+      const npub = String(request.npub || '').trim().toLowerCase();
+      if (!/^npub1[0-9a-z]{58}$/.test(npub)) return { success: false, error: 'Invalid npub' };
+      if (npub === state.npub) return { success: false, error: 'That is your own key' };
+      if (state.friends.includes(npub)) return { success: false, error: 'Already friends' };
+      const event = finalizeEvent({
+        kind: INVITE_KIND,
+        created_at: Math.floor(Date.now() / 1000),
+        tags: [['p', nip19.decode(npub).data]],
+        content: JSON.stringify({ invitee: npub, message: String(request.message || '').slice(0, 140) })
+      }, state.sk);
+      await Promise.allSettled(state.pool.publish(RELAYS, event));
+      const db = await getDB();
+      await db.put('invites', { id: `out|${npub}`, dir: 'out', npub, message: String(request.message || ''), ts: Date.now(), status: 'pending' });
+      return { success: true };
+    }
+
+    case 'respondInvite': {
+      const npub = String(request.npub || '');
+      const db = await getDB();
+      if (request.accept) {
+        await addTrusted(npub);
+        const event = finalizeEvent({
+          kind: ACCEPT_KIND,
+          created_at: Math.floor(Date.now() / 1000),
+          tags: [['p', nip19.decode(npub).data]],
+          content: JSON.stringify({ inviter: npub, invitee: state.npub })
+        }, state.sk);
+        await Promise.allSettled(state.pool.publish(RELAYS, event));
+      }
+      await db.delete('invites', `in|${npub}`);
+      return { success: true, friends: state.friends };
     }
 
     case 'search': {
@@ -736,6 +814,7 @@ export async function handleMeshRequest(request) {
           reachable: [...graph.keys()].filter(n => n !== state.npub).map(n => ({ npub: n, depth: graph.get(n).depth })),
           cachedDocs: await db.count('docCache'),
           profiles,
+          invites: (await db.getAll('invites')).sort((a, b) => b.ts - a.ts),
           recentByPeer
         }
       };

@@ -194,14 +194,71 @@ async function p2p(op, extra = {}) {
 
 const peerStatus = document.getElementById('peerStatus');
 const npubDisplay = document.getElementById('npubDisplay');
-const friendInput = document.getElementById('friendInput');
-const addFriendBtn = document.getElementById('addFriendBtn');
+const inviteInput = document.getElementById('inviteInput');
+const inviteBtn = document.getElementById('inviteBtn');
+const inviteMsg = document.getElementById('inviteMsg');
+const invitesList = document.getElementById('invitesList');
 const friendsList = document.getElementById('friendsList');
 const peerFeed = document.getElementById('peerFeed');
 
 function peerName(npub, profiles) {
   const p = profiles[npub];
   return p && p.name ? p.name : short(npub);
+}
+
+function renderInvites(invites, profiles) {
+  invitesList.innerHTML = '';
+  const pending = invites || [];
+  if (!pending.length) {
+    invitesList.textContent = 'No pending invites.';
+    invitesList.style.cssText = 'font-size: 0.75rem; color: #2c3e2f; margin: 4px 0;';
+    return;
+  }
+  for (const inv of pending) {
+    const row = document.createElement('div');
+    row.className = 'peer-card';
+    const head = document.createElement('div');
+    head.className = 'head';
+    const avatar = document.createElement('span');
+    avatar.className = 'avatar';
+    avatar.textContent = (profiles[inv.npub] && profiles[inv.npub].avatar) || '👤';
+    head.appendChild(avatar);
+    const who = document.createElement('div');
+    who.className = 'who';
+    who.textContent = inv.dir === 'in' ? peerName(inv.npub, profiles) : 'You';
+    const small = document.createElement('small');
+    small.textContent = inv.dir === 'in' ? ' wants to connect' : ' invited ' + short(inv.npub) + ' — waiting…';
+    who.appendChild(small);
+    head.appendChild(who);
+    row.appendChild(head);
+    if (inv.message) {
+      const msg = document.createElement('div');
+      msg.className = 'bio';
+      msg.textContent = '“' + inv.message + '”';
+      row.appendChild(msg);
+    }
+    if (inv.dir === 'in') {
+      const btns = document.createElement('div');
+      btns.className = 'server-row';
+      const accept = document.createElement('button');
+      accept.textContent = 'Accept';
+      accept.addEventListener('click', async () => {
+        await p2p('respondInvite', { npub: inv.npub, accept: true });
+        loadPeers();
+      });
+      const decline = document.createElement('button');
+      decline.className = 'secondary';
+      decline.textContent = 'Decline';
+      decline.addEventListener('click', async () => {
+        await p2p('respondInvite', { npub: inv.npub, accept: false });
+        loadPeers();
+      });
+      btns.appendChild(accept);
+      btns.appendChild(decline);
+      row.appendChild(btns);
+    }
+    invitesList.appendChild(row);
+  }
 }
 
 function renderFriends(friends, connected, profiles) {
@@ -315,25 +372,26 @@ async function loadPeers() {
   peerStatus.textContent =
     `Connected: ${p.connected.length} · Trusted network: ${p.reachable.length} · Cached: ${p.cachedDocs}`;
   peerStatus.className = 'status info';
+  renderInvites(p.invites, p.profiles);
   renderFriends(p.friends, p.connected, p.profiles);
   renderPeerFeed(p.recentByPeer, p.profiles);
 }
 
-addFriendBtn.addEventListener('click', async () => {
-  const npub = friendInput.value.trim().toLowerCase();
+inviteBtn.addEventListener('click', async () => {
+  const npub = inviteInput.value.trim().toLowerCase();
   if (!npub) return;
-  addFriendBtn.disabled = true;
-  const resp = await api.runtime.sendMessage({ p2p: true, op: 'addFriend', npub });
-  addFriendBtn.disabled = false;
+  inviteBtn.disabled = true;
+  const resp = await api.runtime.sendMessage({ p2p: true, op: 'sendInvite', npub });
+  inviteBtn.disabled = false;
   if (resp?.success) {
-    friendInput.value = '';
+    inviteInput.value = '';
+    showStatus(inviteMsg, 'Invite sent — they can accept it from their Peers page.', 'success');
     loadPeers();
   } else {
-    peerStatus.textContent = `❌ ${resp?.error || 'Failed to add friend'}`;
-    peerStatus.className = 'status error';
+    showStatus(inviteMsg, `❌ ${resp?.error || 'Failed to send invite'}`, 'error');
   }
 });
-friendInput.addEventListener('keydown', e => { if (e.key === 'Enter') addFriendBtn.click(); });
+inviteInput.addEventListener('keydown', e => { if (e.key === 'Enter') inviteBtn.click(); });
 
 setInterval(() => {
   const active = document.querySelector('.tab.active');

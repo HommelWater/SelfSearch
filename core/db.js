@@ -1,7 +1,7 @@
 import { openDB } from '../lib/idb.js';
 
 const DB_NAME = 'selfsearch';
-const DB_VERSION = 5;
+const DB_VERSION = 6;
 
 let dbPromise = null;
 
@@ -13,6 +13,7 @@ let dbPromise = null;
 //   images      keyPath hash       — screenshots, never shared
 //   trust       keyPath id         — trust edges (id = truster + '|' + trusted)
 //   profiles    keyPath npub       — gossiped peer profiles (name, avatar, bio)
+//   invites     keyPath id         — friend invites (id = in|npub / out|npub)
 //   settings    keyPath key        — kv settings (nostr key, friends, ...)
 export function getDB() {
   if (!dbPromise) {
@@ -42,6 +43,9 @@ export function getDB() {
         }
         if (!db.objectStoreNames.contains('profiles')) {
           db.createObjectStore('profiles', { keyPath: 'npub' });
+        }
+        if (!db.objectStoreNames.contains('invites')) {
+          db.createObjectStore('invites', { keyPath: 'id' });
         }
         if (!db.objectStoreNames.contains('settings')) {
           db.createObjectStore('settings', { keyPath: 'key' });

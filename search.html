@@ -145,11 +145,15 @@
     <div id="peerStatus" class="status info"></div>
     <h3>Your ID</h3>
     <input id="npubDisplay" type="text" readonly>
-    <h3>Friends</h3>
+    <h3>Invite a friend</h3>
     <div class="server-row">
-      <input id="friendInput" type="text" placeholder="npub1..." autocomplete="off">
-      <button id="addFriendBtn">+</button>
+      <input id="inviteInput" type="text" placeholder="npub1..." autocomplete="off">
+      <button id="inviteBtn">Invite</button>
     </div>
+    <div id="inviteMsg" class="status"></div>
+    <h3>Pending invites</h3>
+    <div id="invitesList"></div>
+    <h3>Friends</h3>
     <div id="friendsList"></div>
     <h3>Recently indexed by peers</h3>
     <div id="peerFeed"></div>
