@@ -1,7 +1,7 @@
 import { openDB } from '../lib/idb.js';
 
 const DB_NAME = 'selfsearch';
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 
 let dbPromise = null;
 
@@ -16,13 +16,16 @@ let dbPromise = null;
 export function getDB() {
   if (!dbPromise) {
     dbPromise = openDB(DB_NAME, DB_VERSION, {
-      upgrade(db) {
+      upgrade(db, oldVersion, newVersion, transaction) {
         if (!db.objectStoreNames.contains('docs')) {
           const s = db.createObjectStore('docs', { keyPath: 'url' });
           s.createIndex('timestamp', 'timestamp');
         }
         if (!db.objectStoreNames.contains('docCache')) {
-          db.createObjectStore('docCache', { keyPath: 'id' });
+          const s = db.createObjectStore('docCache', { keyPath: 'id' });
+          s.createIndex('addedAt', 'addedAt');
+        } else if (transaction && !transaction.objectStore('docCache').indexNames.contains('addedAt')) {
+          transaction.objectStore('docCache').createIndex('addedAt', 'addedAt');
         }
         if (!db.objectStoreNames.contains('index')) {
           db.createObjectStore('index', { keyPath: 'term' });

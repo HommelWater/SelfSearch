@@ -121,9 +121,10 @@ async function meshStatus() {
   const relayEntries = Object.entries(s.relays || {});
   const relaysUp = relayEntries.filter(([, up]) => up).length;
   const relayText = relayEntries.length ? ` · Relays: ${relaysUp}/${relayEntries.length}` : '';
+  const cacheText = s.cachedDocs ? ` · Cached: ${s.cachedDocs}` : '';
   showStatus(
     meshStatusDiv,
-    `Connected: ${s.connected.length} · Trusted network: ${s.reachable.length} · Filters: ${s.peerFilterCount}${relayText}`,
+    `Connected: ${s.connected.length} · Trusted: ${s.reachable.length} · Filters: ${s.peerFilterCount}${relayText}${cacheText}`,
     'info'
   );
   renderFriends(s.friends, s.connected);

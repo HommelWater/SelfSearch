@@ -17,6 +17,10 @@ const QUERY_TIMEOUT = 2500; // hard cap to collect peer answers before returning
 const GRACE_MS = 500;       // extra window for 2-hop answers after all direct peers respond
 const SEEN_TTL = 20 * 1000; // keep query dedup/relay state this long
 
+const DOC_CACHE_CAP = 20000;          // max cached peer docs before LRU eviction
+const BACKFILL_INTERVAL = 5 * 60 * 1000; // proactive friend sync cadence
+const BACKFILL_MAX = 1000;            // max docs per backfill response
+
 const DEFAULT_RELAYS = [
   'wss://relay.damus.io',
   'wss://nos.lol',
@@ -100,7 +104,9 @@ async function publishTrust(trusted, maxHops) {
 
 async function publishFilter() {
   if (!state) return;
+  await refreshCachedTerms();
   const terms = await allIndexedTerms();
+  for (const t of state.cachedTerms) terms.push(t);
   const bloom = BloomFilter.create(Math.max(1024, terms.length));
   bloom.addAll(terms);
   state.filterSeq++;
@@ -111,6 +117,78 @@ async function publishFilter() {
     content: JSON.stringify({ bloom: bloom.toJSON(), termCount: terms.length, seq: state.filterSeq })
   }, state.sk);
   await Promise.allSettled(state.pool.publish(RELAYS, event));
+}
+
+// --- docCache (peer-doc redundancy) ------------------------------------------
+
+async function getCacheCap() {
+  return Math.max(1, Number(await settings.get('cacheCap')) || DOC_CACHE_CAP);
+}
+
+function docTermsOf(cachedDoc) {
+  return cachedDoc.terms || [];
+}
+
+// Store peers' docs locally (keyed authorNpub|url) so their content survives
+// them going offline. Covers on-demand answers and proactive friend backfill.
+async function cachePeerDocs(docs) {
+  if (!docs || !Array.isArray(docs) || !docs.length) return;
+  const db = await getDB();
+  const now = Date.now();
+  let maxTs = 0;
+  let idx = 0;
+  for (const d of docs) {
+    if (!d || !d.url || !d.authorNpub) continue;
+    const terms = new Set([
+      ...tokenize(d.title || ''),
+      ...tokenize(d.description || ''),
+      ...tokenize(d.direct_keywords || ''),
+      ...tokenize(d.related_keywords || '')
+    ]);
+    await db.put('docCache', {
+      id: `${d.authorNpub}|${d.url}`,
+      authorNpub: d.authorNpub,
+      url: d.url,
+      title: d.title || '',
+      description: d.description || '',
+      direct_keywords: d.direct_keywords || '',
+      related_keywords: d.related_keywords || '',
+      timestamp: d.timestamp || Math.floor(now / 1000),
+      addedAt: now + idx++, // distinct within a batch → deterministic LRU order
+      terms: [...terms]
+    });
+    if (d.timestamp > maxTs) maxTs = d.timestamp;
+  }
+  state.cacheDirty = true;
+  await evictDocCache();
+}
+
+// LRU eviction: drop the oldest-added cached docs until under the cap.
+async function evictDocCache() {
+  const db = await getDB();
+  const cap = await getCacheCap();
+  const count = await db.count('docCache');
+  if (count <= cap) return;
+  const rows = await db.getAllFromIndex('docCache', 'addedAt');
+  const overflow = rows.length - cap;
+  for (let i = 0; i < overflow; i++) {
+    await db.delete('docCache', rows[i].id);
+  }
+  state.cacheDirty = true;
+}
+
+// Rebuild the cached-term set when the cache changed (the filter only needs
+// the union of terms, not per-doc data).
+async function refreshCachedTerms() {
+  if (!state.cacheDirty) return;
+  const db = await getDB();
+  const cached = await db.getAll('docCache');
+  const set = new Set();
+  for (const c of cached) {
+    for (const t of docTermsOf(c)) set.add(t);
+  }
+  state.cachedTerms = set;
+  state.cacheDirty = false;
 }
 
 function onGossipEvent(e) {
@@ -194,13 +272,24 @@ async function handleQuery(sender, msg) {
   const terms = tokenize(query);
 
   // Always answer (even empty) so the origin knows we responded and can stop
-  // waiting instead of sitting out the full collection window.
+  // waiting instead of sitting out the full collection window. Serve our own
+  // docs plus anything we have cached from peers (redundancy).
   const local = terms.length ? await localSearch(query, { limit: msg.limit || 10 }) : [];
-  sendSafe(sender, {
-    type: 'query_answer',
-    queryId,
-    results: local.map(d => ({ ...toWireDoc(d), authorNpub: state.npub }))
-  });
+  const results = local.map(d => ({ ...toWireDoc(d), authorNpub: state.npub }));
+  if (terms.length) {
+    const db = await getDB();
+    const cached = await db.getAll('docCache');
+    for (const c of cached) {
+      if (!terms.some(t => docTermsOf(c).includes(t))) continue;
+      results.push({
+        url: c.url, title: c.title, description: c.description,
+        direct_keywords: c.direct_keywords || '', related_keywords: c.related_keywords || '',
+        timestamp: c.timestamp, matchCount: 1, authorNpub: c.authorNpub
+      });
+      if (results.length >= (msg.limit || 10) + 20) break;
+    }
+  }
+  sendSafe(sender, { type: 'query_answer', queryId, results });
 
   // Forward toward the edge of the trust web if hops remain.
   if (hops > 0) {
@@ -219,6 +308,8 @@ async function handleQuery(sender, msg) {
 function handleAnswer(sender, msg) {
   const { queryId, results } = msg;
   if (!queryId || !Array.isArray(results)) return;
+  // On-demand caching: whatever answers pass through us, keep a copy.
+  if (results.length) cachePeerDocs(results).catch(err => console.warn('[mesh] cache answers failed', err));
   const pending = state.pendingQueries.get(queryId);
   if (pending) {
     // We originated this query — aggregate the answers.
@@ -242,12 +333,47 @@ function handleAnswer(sender, msg) {
   if (relay) sendSafe(relay.upstream, msg);
 }
 
+// A friend asked us to backfill — send our own docs newer than `since`.
+async function handleBackfillRequest(sender, msg) {
+  const since = Number(msg.since) || 0;
+  const db = await getDB();
+  const docs = (await db.getAllFromIndex('docs', 'timestamp'))
+    .filter(d => d.timestamp > since)
+    .slice(-BACKFILL_MAX)
+    .map(d => ({ ...toWireDoc(d), authorNpub: state.npub, timestamp: d.timestamp }));
+  sendSafe(sender, { type: 'backfill', since, docs });
+}
+
+// We asked a friend to backfill — store what they sent.
+function handleBackfill(sender, msg) {
+  if (!Array.isArray(msg.docs)) return;
+  cachePeerDocs(msg.docs.map(d => ({ ...d, authorNpub: sender })))
+    .then(() => {
+      let maxTs = 0;
+      for (const d of msg.docs) if (d.timestamp > maxTs) maxTs = d.timestamp;
+      if (maxTs) state.lastBackfillBy.set(sender, maxTs);
+    })
+    .catch(err => console.warn('[mesh] cache backfill failed', err));
+}
+
+// Proactive sync for direct friends (distance 1): request their docs, sending
+// a `since` so only newer content comes back.
+function requestBackfills() {
+  for (const [npub] of state.p2p.connections) {
+    sendSafe(npub, { type: 'backfill_request', since: state.lastBackfillBy.get(npub) || 0 });
+  }
+}
+
 function handlePeerMessage(npub, msg) {
   if (!msg || typeof msg !== 'object') return;
   if (msg.type === 'query') {
     handleQuery(npub, msg).catch(err => console.warn('[mesh] handleQuery error', err));
   } else if (msg.type === 'query_answer') {
     handleAnswer(npub, msg);
+  } else if (msg.type === 'backfill_request') {
+    handleBackfillRequest(npub, msg).catch(err => console.warn('[mesh] backfill request error', err));
+  } else if (msg.type === 'backfill') {
+    handleBackfill(npub, msg);
   }
 }
 
@@ -396,6 +522,7 @@ export async function startMesh() {
     friends: [], maxHops: 2, edges: new Map(),
     peerFilters: new Map(), peerFilterObjs: new Map(), filterSeq: 0,
     pendingQueries: new Map(), pendingRelay: new Map(), seenQueries: new Map(),
+    lastBackfillBy: new Map(), cachedTerms: new Set(), cacheDirty: true,
     started: false, starting: false, lastError: null
   };
   state.starting = true;
@@ -422,7 +549,11 @@ export async function startMesh() {
     }
 
     state.p2p = new NostrP2P(state.skHex, {
-      onConnect: () => publishFilter(),
+      onConnect: (npub) => {
+        publishFilter();
+        // Proactive redundancy for direct friends as soon as they connect.
+        sendSafe(npub, { type: 'backfill_request', since: 0 });
+      },
       onDisconnect: () => {},
       onMessage: handlePeerMessage,
       peers: new Set(state.friends)
@@ -432,6 +563,7 @@ export async function startMesh() {
     }
 
     state.syncTimer = setInterval(() => syncNow(), FILTER_INTERVAL);
+    state.backfillTimer = setInterval(() => requestBackfills(), BACKFILL_INTERVAL);
     syncNow();
 
     state.lastError = null;
@@ -449,6 +581,7 @@ export async function startMesh() {
 export function stopMesh() {
   if (!state) return;
   if (state.syncTimer) clearInterval(state.syncTimer);
+  if (state.backfillTimer) clearInterval(state.backfillTimer);
   try { state.sub?.close(); } catch { /* ignore */ }
   try { state.p2p?.close(); } catch { /* ignore */ }
   try { state.pool?.close(RELAYS); } catch { /* ignore */ }
@@ -483,6 +616,7 @@ export async function handleMeshRequest(request) {
             .filter(n => n !== state.npub)
             .map(n => ({ npub: n, depth: graph.get(n).depth })),
           peerFilterCount: state.peerFilters.size,
+          cachedDocs: await getDB().then(db => db.count('docCache')),
           relays
         }
       };

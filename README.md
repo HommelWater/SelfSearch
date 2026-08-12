@@ -12,8 +12,10 @@ hop-limited web of trust.
 
 > **Status:** local engine (capture → index → search) works; P2P mesh (nostr
 > identity, friends, trust web, relay gossip) works; **peer search** (bloom-filter
-> query routing over the mesh, with streaming results) works. Redundancy
-> (`docCache`) is next. See [DESIGN.md](DESIGN.md) for the full architecture.
+> query routing over the mesh, with streaming results) works; **redundancy
+> (`docCache`)** works — peers' docs are cached on-demand and backfilled from
+> friends, served in queries, and covered by the routing filter. See
+> [DESIGN.md](DESIGN.md) for the full architecture.
 
 ## Install
 

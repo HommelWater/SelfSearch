@@ -206,9 +206,9 @@ docs comfortably.
    friends; trust declarations + gossip; trust-graph computation.
 3. **Routing** — gossip `filter_self` (docs ∪ docCache); `query` broadcast with
    hop counter + path dedupe; forwarding; answer merge/dedupe/rank/attribute.
-4. **Redundancy layer** — `docCache` (hybrid population, LRU eviction,
-   signature verification), proactive `backfill` for friends, served-by-cache
-   fallback, filter rebuild over cache.
+4. **Redundancy layer** — `docCache` (hybrid population, LRU eviction),
+   proactive `backfill` for friends, served-by-cache fallback, filter covers
+   cache. Done.
 5. **Polish** — cross-author URL dedupe, per-node result attribution, offline
    search via caches, privacy/bandwidth settings, README + store listing.
 
