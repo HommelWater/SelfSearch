@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>SelfSearch</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; border-radius: 0px;}
+    body {
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      background: #CADCAE;
+      color: black;
+      padding: 24px;
+      max-width: 860px;
+      margin: 0 auto;
+    }
+    header h1 {
+      font-size: 1.6rem;
+      border-left: 3px solid #EDA35A;
+      padding-left: 12px;
+      margin-bottom: 16px;
+    }
+    .search-row { display: flex; gap: 8px; margin-bottom: 20px; }
+    #query {
+      flex: 1;
+      padding: 12px;
+      font-size: 1rem;
+      border: 1px solid #222;
+      background: #E1E9C9;
+      font-family: inherit;
+      color: inherit;
+      appearance: none;
+      -webkit-appearance: none;
+      -moz-appearance: none;
+    }
+    #go {
+      padding: 12px 20px;
+      border: 1px solid #222;
+      background: #EDA35A;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: inherit;
+      color: inherit;
+      appearance: none;
+      -webkit-appearance: none;
+      -moz-appearance: none;
+    }
+    #go::-moz-focus-inner { border: 0; padding: 0; }
+    #meta { font-size: 0.8rem; color: #2c3e2f; margin-bottom: 16px; }
+    .result {
+      background: #E1E9C9;
+      border-left: 3px solid #EDA35A;
+      padding: 12px 14px;
+      margin-bottom: 12px;
+    }
+    .result h3 { font-size: 1rem; margin-bottom: 4px; }
+    .result h3 a { color: #1a3c1d; text-decoration: none; }
+    .result h3 a:hover { text-decoration: underline; }
+    .result .url { font-size: 0.75rem; color: #4a6b4f; word-break: break-all; margin-bottom: 6px; }
+    .result .desc { font-size: 0.85rem; margin-bottom: 6px; }
+    .result .foot { font-size: 0.7rem; color: #4a6b4f; display: flex; justify-content: space-between; }
+    .result .kw { font-size: 0.7rem; color: #2c3e2f; margin-bottom: 6px; }
+    .del { background: none; border: none; color: #c62828; cursor: pointer; font-size: 0.75rem; }
+    .empty { padding: 24px; text-align: center; color: #2c3e2f; }
+    .cached { color: #1565c0; font-weight: 600; }
+    .local { color: #2e7d32; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <header><h1>🔍 SelfSearch</h1></header>
+
+  <div class="search-row">
+    <input id="query" type="text" placeholder="Search your index..." autofocus>
+    <button id="go">Search</button>
+  </div>
+  <div id="meta"></div>
+  <div id="results"></div>
+
+  <script type="module" src="search.js"></script>
+</body>
+</html>

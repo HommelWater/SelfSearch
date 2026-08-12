@@ -1,0 +1,13 @@
+{
+  "name": "selfsearch",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Serverless peer-to-peer personal search engine (browser extension)",
+  "type": "module",
+  "scripts": {
+    "test": "node test/step1.test.mjs && node --test --experimental-test-module-mocks --test-force-exit test/step3.test.mjs && node --test --experimental-test-module-mocks --test-force-exit test/reconnect.test.mjs"
+  },
+  "devDependencies": {
+    "fake-indexeddb": "^6.0.0"
+  }
+}

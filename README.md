@@ -1,45 +1,59 @@
-## SelfSearch
+# SelfSearch
 
-SelfSearch is a self-hosted search engine. A browser extension captures web pages you visit. A server stores and indexes them locally. You can search your browsing history via web UI, API, or AI agents (MCP protocol).
+A browser extension that turns your browsing history into a personal, searchable
+index — and lets a trusted group of people search across each other's indexes,
+peer-to-peer, **with no server**.
+
+Every node is a full search engine: it captures pages you visit, extracts
+title/keywords/description **locally on your device** (no cloud, no API keys),
+stores them locally, and lets you search them. Peer nodes connect over a WebRTC
+mesh (signaling via Nostr relays) and route queries using bloom filters over a
+hop-limited web of trust.
+
+> **Status:** local engine (capture → index → search) works; P2P mesh (nostr
+> identity, friends, trust web, relay gossip) works; **peer search** (bloom-filter
+> query routing over the mesh, with streaming results) works. Redundancy
+> (`docCache`) is next. See [DESIGN.md](DESIGN.md) for the full architecture.
+
+## Install
+
+Load the extension unpacked:
+
+- **Chrome:** `chrome://extensions` → enable *Developer mode* → *Load unpacked* → select this folder.
+- **Firefox:** `about:debugging` → *This Firefox* → *Load Temporary Add-on* → select `manifest.json`.
+
 ## Quick start
 
-    git clone https://github.com/HommelWater/SelfSearch.git
-    cd SelfSearch
-    sudo bash setup.sh
+1. **Index a page.** Open a page you want to search later, click the icon, then
+   *Index this page*. The page's own text is analyzed locally to extract
+   `{title, description, keywords, url, timestamp}`. Add optional keywords of
+   your own in the popup before indexing.
+2. **Search.** Open the extension popup → *Open Search*, or load `search.html`.
+   Results are ranked, tagged (local / peer), and shown with the page's stored
+   timestamp. Empty query shows your recently-indexed pages.
 
-Follow the prompts (domain, email, Google API key). The script installs the backend, Nginx, SSL, and a systemd service.
+The extension stores everything in IndexedDB on your machine. Screenshots are
+kept locally and never shared.
 
-After installation, visit your domain, sign up using the 'admin' username and scan the QR code with an authenticator app, then log in as admin with TOTP, and start indexing pages. 
+## Development
 
-To add new user accounts, find the invite code in the '/settings' page of your site. 
-Simply enter the username of the new user, and the invite code, add the QR code to an authenticator app. 
-Then, sign in using the TOTP code given by the authenticator app to register and sign in as the new user.
+    npm install   # pulls in fake-indexeddb for the tests
 
-Browser extension
+Tests:
 
-Extension location: src/plugin/
+    npm test
 
-    Chrome: chrome://extensions -> Developer mode -> Load unpacked -> select src/plugin
+## Repository layout
 
-    Firefox: about:debugging -> This Firefox -> Load Temporary Add-on -> select src/plugin/manifest.json
-
-Or visit their respective add-on/extension pages:
-    https://addons.mozilla.org/en-US/firefox/addon/selfsearch-indexer/
-
-Click the extension icon on any page, select your server, then click "Index this page".
-
-## Searching
-
-    Web UI: /search
-
-    API: POST to /search/search with session_token, query, page
-
-    MCP endpoint for AI agents: /mcp (Bearer token authentication)
-
-## Multi-user
-
-Admins can generate invite codes, add users, and delete users (with recursive deletion). Login uses TOTP.
+| Path | Purpose |
+|------|---------|
+| `core/` | Engine: `bloom.js` (routing filter), `tokenize.js`, `db.js` (IndexedDB), `extract.js` (local DOM extraction), `capture.js`, `search.js`, `mesh.js` (p2p host: keys, trust graph, gossip) |
+| `lib/` | Vendored p2p libraries: `nostr-p2p.js` (WebRTC mesh), `nostr-deps.js`, `idb.js` |
+| `background.js` | MV3 background: captures, routes; hosts the mesh on Firefox |
+| `offscreen.html`/`offscreen.js` | Chrome-only persistent host for the WebRTC mesh |
+| `popup.*`, `search.*` | Extension UI |
+| `DESIGN.md` | Architecture + build plan |
 
 ## License
 
-See LICENSE file.
+See [LICENSE](LICENSE).

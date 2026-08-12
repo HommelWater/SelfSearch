@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "SelfSearch",
+  "version": "0.2.0",
+  "description": "Personal P2P search engine. Index pages you visit, search them locally, and share with a trusted network.",
+  "permissions": ["activeTab", "storage", "offscreen", "alarms", "scripting"],
+  "host_permissions": [],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module",
+    "scripts": ["background.js"]
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "SelfSearch"
+  },
+  "icons": {
+    "96": "icon96.png"
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "hommelwater@gmail.com"
+    }
+  }
+}
