@@ -197,6 +197,7 @@ try {
 // it isn't already indexed. Only the URL + title are stored (no DOM text, no
 // screenshots), so no host permissions are needed.
 const MIN_DWELL = 5000;
+const REINDEX_COOLDOWN = 3600; // seconds — don't refresh the same URL too often
 let currentVisit = null; // { tabId, url, title, since }
 
 function isIndexable(url) {
@@ -208,18 +209,29 @@ async function indexVisit(visit) {
     if (!(await settings.get('autoIndex'))) return;
     if (!visit || !isIndexable(visit.url)) return;
     const db = await getDB();
-    if (await db.get('docs', visit.url)) return; // already indexed
-    const terms = tokenize(visit.title || '');
+    const title = String(visit.title || '').trim();
+    const existing = await db.get('docs', visit.url);
+    if (existing) {
+      // Pages change over time: refresh one we auto-indexed ourselves when its
+      // title changed meaningfully, but not too frequently (avoids churn).
+      // Manually-indexed pages are never downgraded by auto-index.
+      if (existing.auto !== true) return;
+      const changed = (existing.title || '') !== title;
+      const fresh = Date.now() / 1000 - existing.timestamp < REINDEX_COOLDOWN;
+      if (!changed || fresh) return;
+    }
+    const terms = tokenize(title);
     await saveDoc({
       url: visit.url,
-      title: String(visit.title || '').trim(),
+      title,
       description: '',
       direct_keywords: [...new Set(terms)].slice(0, 30).join(' '),
       related_keywords: '',
       timestamp: Math.floor(Date.now() / 1000),
-      image_hash: ''
+      image_hash: '',
+      auto: true
     });
-    console.log('[autoindex]', visit.url);
+    console.log('[autoindex]', existing ? 'updated' : 'added', visit.url);
   } catch (e) {
     console.warn('[autoindex] failed', e);
   }
