@@ -10,6 +10,7 @@ import { BloomFilter } from './bloom.js';
 
 const TRUST_KIND = 25010;   // trust declaration: { truster, trusted, maxHops }
 const FILTER_KIND = 25011;  // routing bloom filter gossip: { bloom, termCount, seq }
+const PROFILE_KIND = 25012; // peer profile: { name, avatar, bio }
 const FILTER_INTERVAL = 30 * 1000;
 const GOSSIP_SINCE = 3600;  // seconds of past gossip to replay on subscribe
 const MAX_HOPS_CAP = 5;
@@ -100,6 +101,25 @@ async function publishTrust(trusted, maxHops) {
     content: JSON.stringify({ truster: state.npub, trusted, maxHops })
   }, state.sk);
   await Promise.allSettled(state.pool.publish(RELAYS, event));
+}
+
+// Gossip our profile so peers know who we are (self-signed, like the rest).
+async function publishProfile() {
+  if (!state) return;
+  const profile = (await settings.get('profile')) || {};
+  if (!profile.name && !profile.avatar && !profile.bio) return;
+  const event = finalizeEvent({
+    kind: PROFILE_KIND,
+    created_at: Math.floor(Date.now() / 1000),
+    tags: [],
+    content: JSON.stringify({ name: profile.name || '', avatar: profile.avatar || '', bio: profile.bio || '' })
+  }, state.sk);
+  await Promise.allSettled(state.pool.publish(RELAYS, event));
+}
+
+async function storePeerProfile(npub, profile, ts) {
+  const db = await getDB();
+  await db.put('profiles', { npub, name: profile.name || '', avatar: profile.avatar || '', bio: profile.bio || '', ts });
 }
 
 async function publishFilter() {
@@ -207,6 +227,13 @@ function onGossipEvent(e) {
       if (!bloom || !Number.isFinite(termCount) || !Number.isFinite(seq)) return;
       state.peerFilters.set(e.pubkey, { bloom, termCount, seq, ts: Date.now() });
       state.peerFilterObjs.set(e.pubkey, BloomFilter.fromJSON(bloom));
+    } catch { /* ignore malformed */ }
+  } else if (e.kind === PROFILE_KIND) {
+    try {
+      const profile = JSON.parse(e.content);
+      if (!profile || typeof profile !== 'object') return;
+      if (!verifyEvent(e)) return;
+      storePeerProfile(e.pubkey, profile, e.created_at);
     } catch { /* ignore malformed */ }
   }
 }
@@ -484,6 +511,7 @@ function rankResults(results) {
 function syncNow() {
   if (!state || !state.started) return;
   publishFilter();
+  publishProfile();
   for (const f of state.friends) publishTrust(f, state.maxHops);
   pruneMeshState();
 }
@@ -538,7 +566,7 @@ export async function startMesh() {
     });
     state.sub = state.pool.subscribeMany(
       RELAYS,
-      { kinds: [TRUST_KIND, FILTER_KIND], since: Math.floor(Date.now() / 1000) - GOSSIP_SINCE },
+      { kinds: [TRUST_KIND, FILTER_KIND, PROFILE_KIND], since: Math.floor(Date.now() / 1000) - GOSSIP_SINCE },
       { onevent: onGossipEvent }
     );
 
@@ -665,6 +693,52 @@ export async function handleMeshRequest(request) {
         queryId: request.queryId
       });
       return { success: true, results: res.results, queriedPeers: res.queriedPeers, answeredPeers: res.answeredPeers, queryId: res.queryId };
+    }
+
+    case 'setProfile': {
+      const profile = {
+        name: String(request.name || '').slice(0, 40),
+        avatar: String(request.avatar || '').slice(0, 4),
+        bio: String(request.bio || '').slice(0, 200)
+      };
+      await settings.set('profile', profile);
+      await publishProfile();
+      return { success: true, profile };
+    }
+
+    case 'getPeers': {
+      const graph = computeTrustGraph();
+      const db = await getDB();
+      const profilesRows = await db.getAll('profiles');
+      const profiles = {};
+      for (const p of profilesRows) profiles[p.npub] = { name: p.name, avatar: p.avatar, bio: p.bio };
+
+      // What have peers recently indexed? From our docCache (what we've cached
+      // of theirs), newest first, a few per author.
+      const recentByPeer = {};
+      const cached = await db.getAll('docCache');
+      cached.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+      for (const c of cached) {
+        if (!recentByPeer[c.authorNpub]) recentByPeer[c.authorNpub] = [];
+        if (recentByPeer[c.authorNpub].length < 10) {
+          recentByPeer[c.authorNpub].push({
+            url: c.url, title: c.title, description: c.description, timestamp: c.timestamp
+          });
+        }
+      }
+      return {
+        success: true,
+        peers: {
+          npub: state.npub,
+          ownProfile: (await settings.get('profile')) || {},
+          friends: state.friends,
+          connected: [...state.p2p.connections.keys()],
+          reachable: [...graph.keys()].filter(n => n !== state.npub).map(n => ({ npub: n, depth: graph.get(n).depth })),
+          cachedDocs: await db.count('docCache'),
+          profiles,
+          recentByPeer
+        }
+      };
     }
 
     default:

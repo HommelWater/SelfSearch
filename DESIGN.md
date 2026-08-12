@@ -124,6 +124,7 @@ the mesh that already exists for transport.
 |----------------------|---------|
 | `trust_declaration`  | `{ truster, trusted, maxHops, sig }` — gossiped |
 | `filter`             | `{ bloom, seq, termCount }` — gossiped, who can serve what |
+| `profile`            | `{ name, avatar, bio }` — gossiped (relay kind `25012`), self-signed |
 | `query`              | `{ queryId, terms[], hops, origin, path[] }` — forwardable |
 | `query_answer`       | `{ queryId, results: [{url, title, description, keywords, timestamp, authorNpub, sig}] }` |
 | `backfill_request`   | `{ friendNpub, since }` — proactive sync, friends only |

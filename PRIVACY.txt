@@ -18,8 +18,9 @@ The extension can connect to other users you explicitly trust and search across 
 
     Search queries you enter.
     Text metadata (URL, title, description, keywords, timestamp) of pages in your index.
+    Your profile (name, avatar, bio) if you set one.
 
-Screenshots are never shared with peers. Peer-to-peer sharing is opt-in and only involves peers you explicitly add.
+Screenshots are never shared with peers. Peer-to-peer sharing is opt-in and only involves peers you explicitly add. Your profile and trust declarations are published to public relay servers so peers can find and recognize you.
 Information Sharing and Transfer
 
 We do not sell, share, or transfer your data to third parties. The only transfers occur when you explicitly enable peer-to-peer search: text metadata and queries are exchanged with peers you have added.
@@ -28,9 +29,8 @@ Data Security
 Data is stored locally on your device. Peer-to-peer connections use WebRTC data channels with end-to-end signatures.
 User Control
 
-    Indexing only occurs when you actively click the "Index this page" button.
+    Indexing only occurs when you actively click the extension icon.
     You can delete any indexed page from the search page.
-    You can disable the optional local vision model at any time.
     Peer-to-peer sharing is opt-in and controlled per peer.
     You can uninstall the extension to remove all locally stored data.
 

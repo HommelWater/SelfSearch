@@ -16,6 +16,12 @@ function fmtTime(ts) {
   return new Date(ts * 1000).toLocaleString();
 }
 
+function short(npub, n = 12) {
+  return npub.length > n + 3 ? npub.slice(0, n) + '…' : npub;
+}
+
+// ----- Search tab (unchanged behaviour) -----
+
 function render(results) {
   resultsDiv.innerHTML = '';
   if (!results.length) {
@@ -95,10 +101,6 @@ function render(results) {
   }
 }
 
-function short(npub, n = 12) {
-  return npub.length > n + 3 ? npub.slice(0, n) + '…' : npub;
-}
-
 async function run() {
   const q = queryInput.value.trim();
   if (!q) {
@@ -133,8 +135,6 @@ async function run() {
     const total = Math.round(performance.now() - t0);
     metaDiv.textContent = `${results.length} result${results.length === 1 ? '' : 's'} · ${total}ms · mesh: ${resp?.error || 'offline'}`;
   } else if (resp.results && resp.results.length) {
-    // Mesh answered synchronously without streaming (or partials missed) —
-    // the response is authoritative.
     currentQueryId = null;
     const total = Math.round(performance.now() - t0);
     metaDiv.textContent =
@@ -167,3 +167,212 @@ if (urlQuery) {
 } else {
   run();
 }
+
+// ----- Tabs -----
+
+const tabs = document.querySelectorAll('.tab');
+tabs.forEach(tab => {
+  tab.addEventListener('click', () => {
+    tabs.forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    document.querySelectorAll('.tab-body').forEach(s => { s.style.display = 'none'; });
+    const target = document.getElementById('tab-' + tab.dataset.tab);
+    target.style.display = '';
+    if (tab.dataset.tab === 'peers') loadPeers();
+  });
+});
+
+// ----- Peers tab -----
+
+async function p2p(op, extra = {}) {
+  try {
+    return await api.runtime.sendMessage({ p2p: true, op, ...extra });
+  } catch {
+    return null;
+  }
+}
+
+const peerStatus = document.getElementById('peerStatus');
+const npubDisplay = document.getElementById('npubDisplay');
+const friendInput = document.getElementById('friendInput');
+const addFriendBtn = document.getElementById('addFriendBtn');
+const friendsList = document.getElementById('friendsList');
+const peerFeed = document.getElementById('peerFeed');
+
+function peerName(npub, profiles) {
+  const p = profiles[npub];
+  return p && p.name ? p.name : short(npub);
+}
+
+function renderFriends(friends, connected, profiles) {
+  friendsList.innerHTML = '';
+  if (!friends.length) {
+    friendsList.textContent = 'No friends yet — add an npub to join the network.';
+    friendsList.style.cssText = 'font-size: 0.75rem; color: #2c3e2f; margin: 4px 0;';
+    return;
+  }
+  for (const f of friends) {
+    const row = document.createElement('div');
+    row.className = 'friend-row';
+
+    const dot = document.createElement('span');
+    dot.className = `dot${connected.includes(f) ? ' on' : ''}`;
+    dot.title = connected.includes(f) ? 'connected' : 'not connected';
+    row.appendChild(dot);
+
+    const label = document.createElement('span');
+    label.className = 'f-npub';
+    label.textContent = peerName(f, profiles) + '  ' + short(f);
+    label.title = f;
+    row.appendChild(label);
+
+    const rm = document.createElement('button');
+    rm.textContent = '✕';
+    rm.title = 'Remove friend';
+    rm.addEventListener('click', async () => {
+      await p2p('removeFriend', { npub: f });
+      loadPeers();
+    });
+    row.appendChild(rm);
+
+    friendsList.appendChild(row);
+  }
+}
+
+function renderPeerFeed(recentByPeer, profiles) {
+  peerFeed.innerHTML = '';
+  const authors = Object.entries(recentByPeer)
+    .sort((a, b) => (b[1][0]?.timestamp || 0) - (a[1][0]?.timestamp || 0));
+
+  if (!authors.length) {
+    const div = document.createElement('div');
+    div.className = 'empty';
+    div.textContent = 'Nothing cached from peers yet. Add friends and search to build redundancy.';
+    peerFeed.appendChild(div);
+    return;
+  }
+
+  for (const [npub, docs] of authors) {
+    const p = profiles[npub] || {};
+    const card = document.createElement('div');
+    card.className = 'peer-card';
+
+    const head = document.createElement('div');
+    head.className = 'head';
+    const avatar = document.createElement('span');
+    avatar.className = 'avatar';
+    avatar.textContent = p.avatar || '👤';
+    head.appendChild(avatar);
+    const who = document.createElement('div');
+    who.className = 'who';
+    who.textContent = peerName(npub, profiles);
+    const small = document.createElement('small');
+    small.textContent = ' ' + short(npub);
+    who.appendChild(small);
+    head.appendChild(who);
+    card.appendChild(head);
+
+    if (p.bio) {
+      const bio = document.createElement('div');
+      bio.className = 'bio';
+      bio.textContent = p.bio;
+      card.appendChild(bio);
+    }
+
+    for (const d of docs) {
+      const doc = document.createElement('div');
+      doc.className = 'doc';
+      const a = document.createElement('a');
+      a.href = d.url;
+      a.target = '_blank';
+      a.rel = 'noopener';
+      a.textContent = d.title || d.url;
+      doc.appendChild(a);
+      const url = document.createElement('div');
+      url.className = 'durl';
+      url.textContent = d.url;
+      doc.appendChild(url);
+      const ts = document.createElement('div');
+      ts.className = 'dts';
+      ts.textContent = fmtTime(d.timestamp);
+      doc.appendChild(ts);
+      card.appendChild(doc);
+    }
+
+    peerFeed.appendChild(card);
+  }
+}
+
+async function loadPeers() {
+  const resp = await p2p('getPeers');
+  if (!resp || !resp.success) {
+    peerStatus.textContent = `Peers: ${resp?.error || 'mesh not reachable'}`;
+    peerStatus.className = 'status error';
+    return;
+  }
+  const p = resp.peers;
+  npubDisplay.value = p.npub || '';
+  peerStatus.textContent =
+    `Connected: ${p.connected.length} · Trusted network: ${p.reachable.length} · Cached: ${p.cachedDocs}`;
+  peerStatus.className = 'status info';
+  renderFriends(p.friends, p.connected, p.profiles);
+  renderPeerFeed(p.recentByPeer, p.profiles);
+}
+
+addFriendBtn.addEventListener('click', async () => {
+  const npub = friendInput.value.trim().toLowerCase();
+  if (!npub) return;
+  addFriendBtn.disabled = true;
+  const resp = await api.runtime.sendMessage({ p2p: true, op: 'addFriend', npub });
+  addFriendBtn.disabled = false;
+  if (resp?.success) {
+    friendInput.value = '';
+    loadPeers();
+  } else {
+    peerStatus.textContent = `❌ ${resp?.error || 'Failed to add friend'}`;
+    peerStatus.className = 'status error';
+  }
+});
+friendInput.addEventListener('keydown', e => { if (e.key === 'Enter') addFriendBtn.click(); });
+
+setInterval(() => {
+  const active = document.querySelector('.tab.active');
+  if (active && active.dataset.tab === 'peers') loadPeers();
+}, 5000);
+
+// ----- Profile tab -----
+
+const profileName = document.getElementById('profileName');
+const profileAvatar = document.getElementById('profileAvatar');
+const profileBio = document.getElementById('profileBio');
+const saveProfileBtn = document.getElementById('saveProfileBtn');
+const profileStatus = document.getElementById('profileStatus');
+
+function showStatus(el, message, type) {
+  el.textContent = message;
+  el.className = `status ${type}`;
+}
+
+async function loadProfile() {
+  const resp = await p2p('getPeers');
+  if (!resp?.success) return;
+  const own = resp.peers.ownProfile || {};
+  profileName.value = own.name || '';
+  profileAvatar.value = own.avatar || '';
+  profileBio.value = own.bio || '';
+}
+
+saveProfileBtn.addEventListener('click', async () => {
+  const resp = await p2p('setProfile', {
+    name: profileName.value.trim(),
+    avatar: profileAvatar.value.trim(),
+    bio: profileBio.value.trim()
+  });
+  if (resp?.success) {
+    showStatus(profileStatus, 'Profile saved — shared with peers.', 'success');
+  } else {
+    showStatus(profileStatus, `❌ ${resp?.error || 'Failed to save'}`, 'error');
+  }
+});
+
+loadProfile();

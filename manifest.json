@@ -5,15 +5,19 @@
   "description": "Personal P2P search engine. Index pages you visit, search them locally, and share with a trusted network.",
   "permissions": ["activeTab", "storage", "offscreen", "alarms", "scripting", "tabs"],
   "host_permissions": [],
-  "optional_host_permissions": ["<all_urls>"],
+  "commands": {
+    "open-search": {
+      "suggested_key": { "default": "Alt+Shift+S" },
+      "description": "Open SelfSearch"
+    }
+  },
   "background": {
     "service_worker": "background.js",
     "type": "module",
     "scripts": ["background.js"]
   },
   "action": {
-    "default_popup": "popup.html",
-    "default_title": "SelfSearch"
+    "default_title": "SelfSearch — index this page"
   },
   "omnibox": {
     "keyword": "ss"

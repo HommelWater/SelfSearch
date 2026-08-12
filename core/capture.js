@@ -22,9 +22,8 @@ function readPageInfo() {
 }
 
 // Capture the current tab: read the page DOM, extract keywords locally, merge
-// user keywords, store the doc. `screenshot: false` skips the (heavy) image
-// capture; `auto: true` marks the doc as auto-indexed so it can be refreshed.
-export async function captureAndIndex(tab, { keywords = '', screenshot = true, auto = false } = {}) {
+// user keywords, store the doc. `screenshot: false` skips the (heavy) image.
+export async function captureAndIndex(tab, { keywords = '', screenshot = true } = {}) {
   const api = browserApi();
 
   // Page text (activeTab grants us the current tab while the popup is open).
@@ -70,8 +69,7 @@ export async function captureAndIndex(tab, { keywords = '', screenshot = true, a
     direct_keywords: [...new Set(direct)].slice(0, 30).join(' '),
     related_keywords: [...new Set(related)].slice(0, 30).join(' '),
     timestamp: Math.floor(Date.now() / 1000),
-    image_hash: imageHash,
-    ...(auto ? { auto: true } : {})
+    image_hash: imageHash
   };
 
   await saveDoc(doc, blob);

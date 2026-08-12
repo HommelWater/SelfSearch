@@ -1,7 +1,6 @@
 import { captureAndIndex, browserApi } from './core/capture.js';
-import { settings, getDB } from './core/db.js';
-import { search, getRecent, deleteDoc, saveDoc } from './core/search.js';
-import { tokenize } from './core/tokenize.js';
+import { settings } from './core/db.js';
+import { search, getRecent, deleteDoc } from './core/search.js';
 import { startMesh, handleMeshRequest, syncMesh } from './core/mesh.js';
 
 const api = browserApi();
@@ -121,12 +120,9 @@ function forwardToMesh(request, sendResponse) {
   attempt(0);
 }
 
-// ----- Non-p2p message handling (capture, search, settings) -----
+// ----- Non-p2p message handling (search, recent, settings) -----
 async function handle(request) {
   switch (request.action) {
-    case 'capture':
-      return { success: true, doc: await captureAndIndex(request.tab, { keywords: request.keywords }) };
-
     case 'search':
       return { success: true, results: await search(request.query, { limit: request.limit }) };
 
@@ -172,6 +168,44 @@ api.runtime.onMessage.addListener((request, sender, sendResponse) => {
   return true;
 });
 
+// ----- Icon click = index this page (one click, no popup) -----
+function flashBadge(text, color) {
+  try {
+    api.action.setBadgeBackgroundColor({ color: color || '#2e7d32' });
+    api.action.setBadgeText({ text });
+    setTimeout(() => api.action.setBadgeText({ text: '' }), 2000);
+  } catch { /* ignore */ }
+}
+
+api.action.onClicked.addListener(async (tab) => {
+  try {
+    await api.action.setBadgeText({ text: '…' });
+    await captureAndIndex(tab);
+    flashBadge('✓');
+  } catch (err) {
+    console.warn('[index] failed', err);
+    flashBadge('✗', '#c62828');
+  }
+});
+
+// ----- Open search (omnibox, keyboard, first run) -----
+function openSearch(query) {
+  const url = api.runtime.getURL(`search.html${query ? `?q=${encodeURIComponent(query)}` : ''}`);
+  api.tabs.create({ url });
+}
+
+try {
+  api.commands.onCommand.addListener((name) => {
+    if (name === 'open-search') openSearch();
+  });
+} catch { /* commands unsupported */ }
+
+try {
+  api.runtime.onInstalled.addListener((details) => {
+    if (details.reason === 'install') openSearch();
+  });
+} catch { /* ignore */ }
+
 // ----- Omnibox ("ss <query>") -----
 try {
   api.omnibox.onInputChanged.addListener(async (text, suggest) => {
@@ -183,122 +217,9 @@ try {
       description: `${r.title} — ${r.url}`
     })));
   });
-  api.omnibox.onInputEntered.addListener((text) => {
-    const url = api.runtime.getURL(`search.html?q=${encodeURIComponent(text.trim())}`);
-    api.tabs.create({ url });
-  });
+  api.omnibox.onInputEntered.addListener((text) => openSearch(text.trim()));
 } catch (e) {
   console.warn('omnibox unavailable', e);
 }
-
-// ----- Auto-indexing (opt-in, title-only, engagement-gated) -----
-// Your browsing choices are the filter: a page is indexed only after you've
-// kept it as the active tab for a few seconds, it's a real http(s) page, and
-// it isn't already indexed. Only the URL + title are stored (no DOM text, no
-// screenshots), so no host permissions are needed.
-const MIN_DWELL = 5000;
-const REINDEX_COOLDOWN = 3600; // seconds — don't refresh the same URL too often
-let currentVisit = null; // { tabId, url, title, since }
-
-function isIndexable(url) {
-  return /^https?:\/\//i.test(url || '');
-}
-
-// Do we have permission to read this site's content (via the optional
-// <all_urls> grant)? Full keyword extraction needs it; otherwise title only.
-async function hasHostAccess(url) {
-  try {
-    const origin = new URL(url).origin;
-    return await api.permissions.contains({ origins: [`${origin}/*`] });
-  } catch {
-    return false;
-  }
-}
-
-async function saveTitleOnly(url, title) {
-  const terms = tokenize(title || '');
-  await saveDoc({
-    url,
-    title: String(title || '').trim(),
-    description: '',
-    direct_keywords: [...new Set(terms)].slice(0, 30).join(' '),
-    related_keywords: '',
-    timestamp: Math.floor(Date.now() / 1000),
-    image_hash: '',
-    auto: true
-  });
-}
-
-async function indexVisit(visit) {
-  try {
-    if (!(await settings.get('autoIndex'))) return;
-    if (!visit || !isIndexable(visit.url)) return;
-    const db = await getDB();
-    const title = String(visit.title || '').trim();
-    const existing = await db.get('docs', visit.url);
-    if (existing) {
-      // Pages change over time: refresh one we auto-indexed ourselves when its
-      // title changed meaningfully, but not too frequently (avoids churn).
-      // Manually-indexed pages are never downgraded by auto-index.
-      if (existing.auto !== true) return;
-      const changed = (existing.title || '') !== title;
-      const fresh = Date.now() / 1000 - existing.timestamp < REINDEX_COOLDOWN;
-      if (!changed || fresh) return;
-    }
-    // Full page extraction (keywords + description) when we have host access;
-    // otherwise fall back to URL + title only.
-    if (await hasHostAccess(visit.url)) {
-      try {
-        const tab = await api.tabs.get(visit.tabId);
-        await captureAndIndex(tab, { screenshot: false, auto: true });
-      } catch {
-        await saveTitleOnly(visit.url, title); // tab already closed
-      }
-    } else {
-      await saveTitleOnly(visit.url, title);
-    }
-    console.log('[autoindex]', existing ? 'updated' : 'added', visit.url);
-  } catch (e) {
-    console.warn('[autoindex] failed', e);
-  }
-}
-
-function flushVisit(now = Date.now()) {
-  if (currentVisit && now - currentVisit.since >= MIN_DWELL) {
-    indexVisit(currentVisit);
-  }
-  currentVisit = null;
-}
-
-api.tabs.onActivated.addListener(async (info) => {
-  flushVisit();
-  try {
-    const tab = await api.tabs.get(info.tabId);
-    currentVisit = isIndexable(tab.url)
-      ? { tabId: info.tabId, url: tab.url, title: tab.title || '', since: Date.now() }
-      : null;
-  } catch {
-    currentVisit = null;
-  }
-});
-
-api.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  if (changeInfo.status !== 'complete' || !currentVisit || tabId !== currentVisit.tabId) return;
-  // Navigated while it was the active tab — restart the dwell clock.
-  currentVisit = isIndexable(tab.url)
-    ? { tabId, url: tab.url, title: tab.title || '', since: Date.now() }
-    : null;
-});
-
-api.tabs.onRemoved.addListener((tabId) => {
-  if (currentVisit && currentVisit.tabId === tabId) flushVisit();
-});
-
-// Alt-Tab to another window: flush the engaged page instead of losing it.
-try {
-  api.windows.onFocusChanged.addListener((windowId) => {
-    if (windowId === api.windows.WINDOW_ID_NONE) flushVisit();
-  });
-} catch { /* unsupported */ }
 
 console.log('SelfSearch background loaded');

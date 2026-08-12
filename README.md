@@ -14,8 +14,9 @@ hop-limited web of trust.
 > identity, friends, trust web, relay gossip) works; **peer search** (bloom-filter
 > query routing over the mesh, with streaming results) works; **redundancy
 > (`docCache`)** works — peers' docs are cached on-demand and backfilled from
-> friends, served in queries, and covered by the routing filter. See
-> [DESIGN.md](DESIGN.md) for the full architecture.
+> friends, served in queries, and covered by the routing filter. **Profiles and
+> a peers feed** let you see who your peers are and what they've recently
+> indexed. See [DESIGN.md](DESIGN.md) for the full architecture.
 
 ## Install
 
@@ -26,20 +27,16 @@ Load the extension unpacked:
 
 ## Quick start
 
-1. **Index a page.** Open a page you want to search later, click the icon, then
-   *Index this page*. The page's own text is analyzed locally to extract
-   `{title, description, keywords, url, timestamp}`. Add optional keywords of
-   your own in the popup before indexing.
-2. **Auto-index (optional).** Tick *Auto-index pages I spend time on* in the
-   popup — pages you keep open for a few seconds get indexed automatically.
-   By default it stores URL + title; click *Enable full page keywords* (one
-   optional permission, requested at runtime) to also extract keywords and a
-   description from the page content. Revisiting a changed page refreshes it
-   (but never overwrites a manually-indexed page).
-3. **Search.** Type `ss <query>` in the address bar (omnibox), or open the
-   extension popup → *Open Search*. Results are ranked, tagged (local / peer),
-   and shown with the page's stored timestamp. Empty query shows your
-   recently-indexed pages.
+1. **Index a page.** Open a page you want to search later and **click the
+   extension icon** — the current page is indexed in one click. Keywords, a
+   title, and a description are extracted locally from the page's own text.
+2. **Search.** Type `ss <query>` in the address bar (omnibox), press
+   `Alt+Shift+S`, or open the search page from the icon's context menu. The
+   search page also holds **Peers** (your ID, friends, and what peers have
+   recently indexed) and **Profile** (your name/avatar/bio, shared with peers).
+3. **Add a friend.** Open the search page → *Peers*, paste their npub. Your
+   nodes connect over a WebRTC mesh and build redundancy by caching each
+   other's pages.
 
 The extension stores everything in IndexedDB on your machine. Screenshots are
 kept locally and never shared.
