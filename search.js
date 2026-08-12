@@ -264,7 +264,7 @@ function renderInvites(invites, profiles) {
 function renderFriends(friends, connected, profiles) {
   friendsList.innerHTML = '';
   if (!friends.length) {
-    friendsList.textContent = 'No friends yet — add an npub to join the network.';
+    friendsList.textContent = 'No friends yet — invite an npub to join the network.';
     friendsList.style.cssText = 'font-size: 0.75rem; color: #2c3e2f; margin: 4px 0;';
     return;
   }
@@ -277,13 +277,15 @@ function renderFriends(friends, connected, profiles) {
     dot.title = connected.includes(f) ? 'connected' : 'not connected';
     row.appendChild(dot);
 
-    const label = document.createElement('span');
-    label.className = 'f-npub';
-    label.textContent = peerName(f, profiles) + '  ' + short(f);
-    label.title = f;
+    const p = profiles[f] || {};
+    const label = document.createElement('button');
+    label.className = 'friend-link';
+    label.innerHTML = `<span class="fa">${p.avatar || '👤'}</span> ${peerName(f, profiles)}<span class="fsub">${short(f)} · view index →</span>`;
+    label.addEventListener('click', () => openPeerDetail(f, profiles));
     row.appendChild(label);
 
     const rm = document.createElement('button');
+    rm.className = 'secondary';
     rm.textContent = '✕';
     rm.title = 'Remove friend';
     rm.addEventListener('click', async () => {
@@ -293,6 +295,104 @@ function renderFriends(friends, connected, profiles) {
     row.appendChild(rm);
 
     friendsList.appendChild(row);
+  }
+}
+
+// ----- Friend detail: their entire (cached) index -----
+
+const peersMain = document.getElementById('peersMain');
+const peerDetail = document.getElementById('peerDetail');
+const peerDetailContent = document.getElementById('peerDetailContent');
+let currentPeerDetail = null;
+
+function openPeerDetail(npub, profiles) {
+  currentPeerDetail = npub;
+  peersMain.style.display = 'none';
+  peerDetail.style.display = '';
+  loadPeerDetail(npub, profiles);
+}
+
+function closePeerDetail() {
+  currentPeerDetail = null;
+  peerDetail.style.display = 'none';
+  peersMain.style.display = '';
+  loadPeers();
+}
+
+document.getElementById('peerDetailBack').addEventListener('click', closePeerDetail);
+
+async function loadPeerDetail(npub, profiles) {
+  const p = profiles[npub] || {};
+  peerDetailContent.innerHTML = '<div class="empty">Loading…</div>';
+
+  const resp = await p2p('getPeerDocs', { npub });
+  const docs = (resp && resp.success) ? resp.docs : [];
+
+  peerDetailContent.innerHTML = '';
+  const card = document.createElement('div');
+  card.className = 'peer-card';
+  const head = document.createElement('div');
+  head.className = 'head';
+  const avatar = document.createElement('span');
+  avatar.className = 'avatar';
+  avatar.textContent = p.avatar || '👤';
+  head.appendChild(avatar);
+  const who = document.createElement('div');
+  who.className = 'who';
+  who.textContent = peerName(npub, profiles);
+  const small = document.createElement('small');
+  small.textContent = ' ' + short(npub);
+  who.appendChild(small);
+  head.appendChild(who);
+  card.appendChild(head);
+  if (p.bio) {
+    const bio = document.createElement('div');
+    bio.className = 'bio';
+    bio.textContent = p.bio;
+    card.appendChild(bio);
+  }
+  const count = document.createElement('div');
+  count.className = 'bio';
+  count.textContent = `${docs.length} indexed page${docs.length === 1 ? '' : 's'} (cached)`;
+  card.appendChild(count);
+  peerDetailContent.appendChild(card);
+
+  if (!docs.length) {
+    const empty = document.createElement('div');
+    empty.className = 'empty';
+    empty.textContent = 'No pages cached from this peer yet — they appear as they backfill.';
+    peerDetailContent.appendChild(empty);
+    return;
+  }
+
+  for (const d of docs) {
+    const el = document.createElement('div');
+    el.className = 'result';
+    const h = document.createElement('h3');
+    const a = document.createElement('a');
+    a.href = d.url;
+    a.target = '_blank';
+    a.rel = 'noopener';
+    a.textContent = d.title || d.url;
+    h.appendChild(a);
+    el.appendChild(h);
+    const url = document.createElement('div');
+    url.className = 'url';
+    url.textContent = d.url;
+    el.appendChild(url);
+    if (d.description) {
+      const desc = document.createElement('div');
+      desc.className = 'desc';
+      desc.textContent = d.description;
+      el.appendChild(desc);
+    }
+    const foot = document.createElement('div');
+    foot.className = 'foot';
+    const ts = document.createElement('span');
+    ts.textContent = fmtTime(d.timestamp);
+    foot.appendChild(ts);
+    el.appendChild(foot);
+    peerDetailContent.appendChild(el);
   }
 }
 
@@ -361,6 +461,7 @@ function renderPeerFeed(recentByPeer, profiles) {
 }
 
 async function loadPeers() {
+  if (currentPeerDetail) return; // friend detail view is open; don't clobber it
   const resp = await p2p('getPeers');
   if (!resp || !resp.success) {
     peerStatus.textContent = `Peers: ${resp?.error || 'mesh not reachable'}`;

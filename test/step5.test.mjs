@@ -98,6 +98,12 @@ test('docCache: backfill stores peer docs, served back in queries', async () => 
   const hit = answer.msg.results.find(r => r.url === 'https://friend.example/recipe');
   assert.ok(hit, 'cached doc served in the answer');
   assert.equal(hit.authorNpub, FRIEND, 'served cached doc attributed to its author');
+
+  // Friend detail: full index history from the cache.
+  const peerDocs = await mesh.handleMeshRequest({ p2p: true, op: 'getPeerDocs', npub: FRIEND });
+  assert.equal(peerDocs.success, true);
+  assert.equal(peerDocs.docs.length, 1);
+  assert.equal(peerDocs.docs[0].url, 'https://friend.example/recipe');
 });
 
 test('docCache: LRU eviction removes oldest beyond the cap', async () => {

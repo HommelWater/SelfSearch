@@ -764,6 +764,17 @@ export async function handleMeshRequest(request) {
       return { success: true, friends: state.friends };
     }
 
+    case 'getPeerDocs': {
+      const npub = String(request.npub || '');
+      const db = await getDB();
+      const docs = (await db.getAll('docCache'))
+        .filter(c => c.authorNpub === npub)
+        .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
+        .slice(0, 500)
+        .map(c => ({ url: c.url, title: c.title, description: c.description, timestamp: c.timestamp }));
+      return { success: true, npub, docs };
+    }
+
     case 'search': {
       const res = await searchNetwork(request.query, {
         limit: request.limit || 20,

@@ -104,6 +104,27 @@
     .friend-row .dot { width: 8px; height: 8px; border-radius: 50%; background: #999; flex: none; }
     .friend-row .dot.on { background: #2e7d32; }
     .friend-row button { width: auto; padding: 4px 8px; margin: 0; font-size: 0.7rem; }
+    .friend-link {
+      flex: 1;
+      text-align: left;
+      border: 1px solid #222;
+      background: #E1E9C9;
+      padding: 6px 10px;
+      margin: 0;
+      cursor: pointer;
+      font-weight: 500;
+      font-size: 0.85rem;
+      font-family: inherit;
+      color: inherit;
+      appearance: none;
+      -webkit-appearance: none;
+      -moz-appearance: none;
+    }
+    .friend-link:hover { background: #FEE8D9; }
+    .friend-link::-moz-focus-inner { border: 0; padding: 0; }
+    .friend-link .fa { margin-right: 6px; }
+    .friend-link .fsub { display: block; font-size: 0.65rem; color: #4a6b4f; font-weight: normal; }
+    #peerDetailBack { margin-bottom: 12px; }
     .peer-card { background: #E1E9C9; border-left: 3px solid #EDA35A; padding: 12px 14px; margin-bottom: 14px; }
     .peer-card .head { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
     .peer-card .avatar { font-size: 1.6rem; }
@@ -142,21 +163,27 @@
   </section>
 
   <section id="tab-peers" class="tab-body" style="display:none">
-    <div id="peerStatus" class="status info"></div>
-    <h3>Your ID</h3>
-    <input id="npubDisplay" type="text" readonly>
-    <h3>Invite a friend</h3>
-    <div class="server-row">
-      <input id="inviteInput" type="text" placeholder="npub1..." autocomplete="off">
-      <button id="inviteBtn">Invite</button>
+    <div id="peersMain">
+      <div id="peerStatus" class="status info"></div>
+      <h3>Your ID</h3>
+      <input id="npubDisplay" type="text" readonly>
+      <h3>Invite a friend</h3>
+      <div class="server-row">
+        <input id="inviteInput" type="text" placeholder="npub1..." autocomplete="off">
+        <button id="inviteBtn">Invite</button>
+      </div>
+      <div id="inviteMsg" class="status"></div>
+      <h3>Pending invites</h3>
+      <div id="invitesList"></div>
+      <h3>Friends</h3>
+      <div id="friendsList"></div>
+      <h3>Recently indexed by peers</h3>
+      <div id="peerFeed"></div>
     </div>
-    <div id="inviteMsg" class="status"></div>
-    <h3>Pending invites</h3>
-    <div id="invitesList"></div>
-    <h3>Friends</h3>
-    <div id="friendsList"></div>
-    <h3>Recently indexed by peers</h3>
-    <div id="peerFeed"></div>
+    <div id="peerDetail" style="display:none">
+      <button id="peerDetailBack" class="secondary">← Back to peers</button>
+      <div id="peerDetailContent"></div>
+    </div>
   </section>
 
   <section id="tab-profile" class="tab-body" style="display:none">
