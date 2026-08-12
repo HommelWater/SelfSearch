@@ -116,7 +116,9 @@ node's own storage.
 
 Why a bloom filter and not a DHT: at personal/trusted-group scale (tens of
 nodes), gossiped filters are simpler, have no churn/replication logic, and reuse
-the mesh that already exists for transport.
+the mesh that already exists for transport. To scale *past* a couple of hops
+without flooding, filters grow into per-friend **aggregate filters** for guided
+routing — see [Scaling beyond two hops](#scaling-beyond-two-hops).
 
 ## Message protocol (over the data channel, all signed)
 
@@ -124,8 +126,9 @@ the mesh that already exists for transport.
 |----------------------|---------|
 | `trust_declaration`  | `{ truster, trusted, maxHops, sig }` — gossiped |
 | `filter`             | `{ bloom, seq, termCount }` — gossiped, who can serve what |
+| `aggregate_filter`   | `{ friend, bloom, horizon, seq }` — gossiped, subtree summaries for routing (kind `25015`) |
 | `profile`            | `{ name, avatar, bio }` — gossiped (relay kind `25012`), self-signed |
-| `query`              | `{ queryId, terms[], hops, origin, path[] }` — forwardable |
+| `query`              | `{ queryId, terms[], hops, budget, origin, path[] }` — forwardable |
 | `query_answer`       | `{ queryId, results: [{url, title, description, keywords, timestamp, authorNpub, sig}] }` |
 | `backfill_request`   | `{ friendNpub, since }` — proactive sync, friends only |
 | `backfill`           | `{ docs: [...] }` — full doc set, friends only |
@@ -167,6 +170,80 @@ docs comfortably.
   entries). Provides offline search and fast repeats.
 - **Verification:** cached docs keep the author's signature; serve-time
   verification catches tampered cache entries.
+
+## Scaling beyond two hops
+
+The hop limit (`maxHops = 2`) is what keeps the query flood bounded today. A
+web of trust is a **small-world graph** — paths between members are short — so
+the network's diameter is not the obstacle. The obstacles are *fan-out* and
+*reach*, and the fixes are **aggregate bloom filters** (routing instead of
+flooding) and **replication** (content comes to you instead of you travelling to
+it).
+
+### Aggregate bloom filters (guided routing)
+
+Today `filter_self` is a neighbor-level hint: "which of my direct friends might
+have term X?" For a deeper search it must become a routing table: "which friend
+is on a path to someone who has X?"
+
+- Each node gossips an **aggregate filter** per trusted friend: the union of
+  that friend's `filter_self` and the aggregates of the friend's trusted
+  network, up to an aggregation horizon (default ~3 hops of summaries).
+- Routing becomes **greedy descent**: at each hop, forward the query only to
+  the friends whose aggregate contains a term (usually a single best path),
+  instead of to every filter-matching friend. Per-hop fan-out stops growing
+  exponentially with depth.
+- Because aggregates summarise whole subtrees, a query can reach content 4–5+
+  edges away while each hop makes one onward decision.
+- This is the approach Gnutella's Query Routing Protocol used to scale to
+  millions of nodes; the mesh + relay gossip substrate needed here already
+  exists.
+
+Bloom false positives may send a query down a dead end, so routing keeps a
+small **backtrack budget** (a bounded number of alternative paths) on top of
+the global budget below.
+
+### Replication: the content horizon
+
+Routing is only half the answer. The other half is that **content should be
+near you, not a journey away.**
+
+- `docCache` (see Redundancy) means a node answers from its own docs **plus
+  everything it has cached**, and `filter_self` / aggregates include cached
+  content.
+- Every query answer already fills the cache, and friends backfill each other,
+  so content **replicates toward demand**: pages people search for become
+  available 1–2 hops from everyone who asked.
+- The effective search radius becomes the **content horizon**, not the hop
+  count. A substantial network becomes searchable with a modest hop limit
+  because the answers live close by.
+
+### Bounded search budget
+
+Depth must not become an unbounded cost. Add a per-query **budget** (max nodes
+visited / answers relayed) carried in the query and decremented at each node,
+alongside the hop counter. Nodes refuse to forward once the budget is
+exhausted. This caps worst-case load on every node regardless of `maxHops`,
+so the hop limit can be raised (e.g., to 5–6, matching the trust web's
+diameter) without overloading anyone.
+
+### What this changes
+
+- **Protocol:** gossip an `aggregate_filter` (relay kind `25015`) alongside
+  `filter_self`; queries carry a `budget` field in addition to `hops`.
+- **Trust stays the boundary:** aggregates are computed only from trusted
+  peers' declarations, and forwarding only ever follows trusted edges.
+
+### Costs (honest)
+
+- Aggregate filters are unions of many nodes' content → larger filters and more
+  false positives. Sized by covered term count (as today); mitigated by the
+  small backtrack budget.
+- Aggregates and replication consume bandwidth (gossip + backfill) and storage
+  (bounded by the `docCache` cap). Both are bounded.
+- Aggregates leak "roughly what this subtree contains" — acceptable inside a
+  trust web, a privacy concern for an open network.
+
 
 ## Capture pipeline (local extraction)
 
@@ -212,9 +289,12 @@ docs comfortably.
    cache. Done.
 5. **Polish** — cross-author URL dedupe, per-node result attribution, offline
    search via caches, privacy/bandwidth settings, README + store listing.
+6. **Scale** — aggregate bloom filters (gossip kind `25015`, per-friend subtree
+   summaries) for greedy guided routing; per-query `budget`; raise `maxHops` to
+   5–6 with the budget capping worst-case load. (Design above.)
 
 ## Open questions / future work
 
 - Per-node rate limiting / penalty scoring for bad actors.
-- Larger-than-trust-radius discovery (currently impossible by design).
-- Compression/delta updates for `filter_self` gossip.
+- Compression/delta updates for `filter_self` and `aggregate_filter` gossip.
+- Backtrack routing beyond one parallel path when greedy descent dead-ends.
