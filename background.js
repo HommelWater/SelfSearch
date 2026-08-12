@@ -129,8 +129,17 @@ async function handle(request) {
     case 'recent':
       return { success: true, results: await getRecent(request.limit) };
 
-    case 'deleteDoc':
-      return { success: true, deleted: await deleteDoc(request.url) };
+    case 'deleteDoc': {
+      const deleted = await deleteDoc(request.url);
+      // Tell the mesh to rebuild its cached-terms filter after a deletion.
+      const req = { p2p: true, op: 'refreshCache' };
+      if (!IS_CHROME_SW) {
+        handleMeshRequest(req).catch(() => {});
+      } else {
+        api.runtime.sendMessage(req).catch(() => {});
+      }
+      return { success: true, deleted };
+    }
 
     case 'getSettings':
       return { success: true, settings: await settings.all() };

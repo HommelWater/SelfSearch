@@ -54,15 +54,37 @@ export async function deleteDoc(url) {
   const indexStore = tx.objectStore('index');
 
   const doc = await docsStore.get(url);
-  if (!doc) {
-    await tx.done;
-    return false;
+  let removed = false;
+  if (doc) {
+    await unindexTerms(indexStore, doc);
+    await docsStore.delete(url);
+    if (doc.image_hash) await tx.objectStore('images').delete(doc.image_hash);
+    removed = true;
   }
-  await unindexTerms(indexStore, doc);
-  await docsStore.delete(url);
-  if (doc.image_hash) await tx.objectStore('images').delete(doc.image_hash);
   await tx.done;
-  return true;
+
+  // Drop it from cached queries so it doesn't reappear right after deletion.
+  const qcRows = await db.getAll('queryCache');
+  for (const row of qcRows) {
+    if (row.results && row.results.some(r => r.url === url)) {
+      const filtered = row.results.filter(r => r.url !== url);
+      if (filtered.length) await db.put('queryCache', { ...row, results: filtered });
+      else await db.delete('queryCache', row.query);
+      removed = true;
+    }
+  }
+
+  // Drop any cached peer copies (our local redundancy copy; the author's index
+  // is unaffected).
+  const cached = await db.getAll('docCache');
+  for (const c of cached) {
+    if (c.url === url) {
+      await db.delete('docCache', c.id);
+      removed = true;
+    }
+  }
+
+  return removed;
 }
 
 // --- Search ---------------------------------------------------------------

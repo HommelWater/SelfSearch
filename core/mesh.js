@@ -775,6 +775,14 @@ export async function handleMeshRequest(request) {
       return { success: true, npub, docs };
     }
 
+    case 'refreshCache': {
+      // The local store changed under us (e.g. a delete) — rebuild the cached
+      // terms and re-gossip the routing filter.
+      state.cacheDirty = true;
+      await publishFilter();
+      return { success: true };
+    }
+
     case 'search': {
       const res = await searchNetwork(request.query, {
         limit: request.limit || 20,

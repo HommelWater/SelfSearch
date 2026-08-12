@@ -93,7 +93,8 @@ function render(results) {
       await api.runtime.sendMessage({ action: 'deleteDoc', url: r.url });
       run();
     });
-    right.appendChild(del);
+    // Peer results live in the network's index — nothing for us to delete.
+    if (r.source !== 'peer') right.appendChild(del);
     foot.appendChild(right);
     el.appendChild(foot);
 
