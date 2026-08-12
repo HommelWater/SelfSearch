@@ -68,6 +68,10 @@ test('setIdentity rekeys the mesh and enables device sync', async () => {
   const peers = await mesh.handleMeshRequest({ p2p: true, op: 'getPeers' });
   assert.equal(peers.peers.syncDevices, true, 'device sync enabled by default');
   assert.ok(lastP2P.connections.has(NPUB), 'linked to our own npub (the other device)');
+
+  const identity = await mesh.handleMeshRequest({ p2p: true, op: 'getIdentity' });
+  assert.equal(identity.nsec, nsecHex, 'the nsec is exposed for copying across devices');
+  assert.equal(identity.npub, NPUB);
 });
 
 test('backfill from a same-identity device restores docs into our own index', async () => {

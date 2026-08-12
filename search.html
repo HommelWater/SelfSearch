@@ -200,7 +200,13 @@
     <h3>Sync across devices</h3>
     <label>Your identity (npub)</label>
     <input id="identityNpub" type="text" readonly>
-    <label>nsec <span style="font-weight:normal; text-transform:none;">(enter the same nsec on each device to sync)</span></label>
+    <label>nsec <span style="font-weight:normal; text-transform:none;">(the key that IS this identity — keep it secret)</span></label>
+    <div class="server-row">
+      <input id="identityNsecDisplay" type="password" readonly placeholder="••••••••" autocomplete="off">
+      <button id="revealNsecBtn" class="secondary">Show</button>
+      <button id="copyNsecBtn" class="secondary">Copy</button>
+    </div>
+    <label>Enter nsec <span style="font-weight:normal; text-transform:none;">(same nsec on each device to sync)</span></label>
     <input id="identityNsec" type="password" placeholder="64 hex characters" autocomplete="off">
     <button id="setIdentityBtn">Save identity &amp; sync</button>
     <label style="display:flex; align-items:center; gap:8px; margin:8px 0;">

@@ -510,10 +510,15 @@ const profileStatus = document.getElementById('profileStatus');
 
 const identityNpub = document.getElementById('identityNpub');
 const identityNsec = document.getElementById('identityNsec');
+const identityNsecDisplay = document.getElementById('identityNsecDisplay');
+const revealNsecBtn = document.getElementById('revealNsecBtn');
+const copyNsecBtn = document.getElementById('copyNsecBtn');
 const setIdentityBtn = document.getElementById('setIdentityBtn');
 const syncDevicesCheckbox = document.getElementById('syncDevicesCheckbox');
 const syncNowBtn = document.getElementById('syncNowBtn');
 const syncStatus = document.getElementById('syncStatus');
+
+let currentNsec = null;
 
 function showStatus(el, message, type) {
   el.textContent = message;
@@ -539,6 +544,37 @@ function renderSyncStatus(peers) {
     : 'Device sync off.';
   syncStatus.className = linked ? 'status success' : 'status info';
 }
+
+revealNsecBtn.addEventListener('click', async () => {
+  if (currentNsec) {
+    identityNsecDisplay.type = identityNsecDisplay.type === 'password' ? 'text' : 'password';
+    revealNsecBtn.textContent = identityNsecDisplay.type === 'password' ? 'Show' : 'Hide';
+    return;
+  }
+  const resp = await p2p('getIdentity');
+  if (resp?.success) {
+    currentNsec = resp.nsec;
+    identityNsecDisplay.value = resp.nsec;
+    identityNsecDisplay.type = 'text';
+    revealNsecBtn.textContent = 'Hide';
+    showStatus(syncStatus, 'This nsec IS your identity — anyone with it can act as you.', 'error');
+  } else {
+    showStatus(syncStatus, `❌ ${resp?.error || 'Failed to load identity'}`, 'error');
+  }
+});
+
+copyNsecBtn.addEventListener('click', async () => {
+  if (!currentNsec) await revealNsecBtn.click();
+  if (!currentNsec) return;
+  try {
+    await navigator.clipboard.writeText(currentNsec);
+    showStatus(syncStatus, 'nsec copied to clipboard.', 'success');
+  } catch {
+    identityNsecDisplay.select();
+    document.execCommand('copy');
+    showStatus(syncStatus, 'nsec copied to clipboard.', 'success');
+  }
+});
 
 saveProfileBtn.addEventListener('click', async () => {
   const resp = await p2p('setProfile', {

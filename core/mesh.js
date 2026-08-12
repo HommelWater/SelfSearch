@@ -1088,6 +1088,9 @@ export async function handleMeshRequest(request) {
       return { success: true, enabled: on };
     }
 
+    case 'getIdentity':
+      return { success: true, npub: state.npub, nsec: state.skHex };
+
     case 'getPeers': {
       const graph = computeTrustGraph();
       const db = await getDB();
