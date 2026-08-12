@@ -3,7 +3,7 @@
   "name": "SelfSearch",
   "version": "0.2.0",
   "description": "Personal P2P search engine. Index pages you visit, search them locally, and share with a trusted network.",
-  "permissions": ["activeTab", "storage", "offscreen", "alarms", "scripting"],
+  "permissions": ["activeTab", "storage", "offscreen", "alarms", "scripting", "tabs"],
   "host_permissions": [],
   "background": {
     "service_worker": "background.js",
@@ -13,6 +13,9 @@
   "action": {
     "default_popup": "popup.html",
     "default_title": "SelfSearch"
+  },
+  "omnibox": {
+    "keyword": "ss"
   },
   "icons": {
     "96": "icon96.png"

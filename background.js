@@ -1,6 +1,7 @@
 import { captureAndIndex, browserApi } from './core/capture.js';
-import { settings } from './core/db.js';
-import { search, getRecent, deleteDoc } from './core/search.js';
+import { settings, getDB } from './core/db.js';
+import { search, getRecent, deleteDoc, saveDoc } from './core/search.js';
+import { tokenize } from './core/tokenize.js';
 import { startMesh, handleMeshRequest, syncMesh } from './core/mesh.js';
 
 const api = browserApi();
@@ -170,5 +171,96 @@ api.runtime.onMessage.addListener((request, sender, sendResponse) => {
     .catch(err => sendResponse({ success: false, error: err.message }));
   return true;
 });
+
+// ----- Omnibox ("ss <query>") -----
+try {
+  api.omnibox.onInputChanged.addListener(async (text, suggest) => {
+    const q = (text || '').trim();
+    if (!q) { suggest([]); return; }
+    const results = await search(q, { limit: 5 });
+    suggest(results.map(r => ({
+      content: q,
+      description: `${r.title} — ${r.url}`
+    })));
+  });
+  api.omnibox.onInputEntered.addListener((text) => {
+    const url = api.runtime.getURL(`search.html?q=${encodeURIComponent(text.trim())}`);
+    api.tabs.create({ url });
+  });
+} catch (e) {
+  console.warn('omnibox unavailable', e);
+}
+
+// ----- Auto-indexing (opt-in, title-only, engagement-gated) -----
+// Your browsing choices are the filter: a page is indexed only after you've
+// kept it as the active tab for a few seconds, it's a real http(s) page, and
+// it isn't already indexed. Only the URL + title are stored (no DOM text, no
+// screenshots), so no host permissions are needed.
+const MIN_DWELL = 5000;
+let currentVisit = null; // { tabId, url, title, since }
+
+function isIndexable(url) {
+  return /^https?:\/\//i.test(url || '');
+}
+
+async function indexVisit(visit) {
+  try {
+    if (!(await settings.get('autoIndex'))) return;
+    if (!visit || !isIndexable(visit.url)) return;
+    const db = await getDB();
+    if (await db.get('docs', visit.url)) return; // already indexed
+    const terms = tokenize(visit.title || '');
+    await saveDoc({
+      url: visit.url,
+      title: String(visit.title || '').trim(),
+      description: '',
+      direct_keywords: [...new Set(terms)].slice(0, 30).join(' '),
+      related_keywords: '',
+      timestamp: Math.floor(Date.now() / 1000),
+      image_hash: ''
+    });
+    console.log('[autoindex]', visit.url);
+  } catch (e) {
+    console.warn('[autoindex] failed', e);
+  }
+}
+
+function flushVisit(now = Date.now()) {
+  if (currentVisit && now - currentVisit.since >= MIN_DWELL) {
+    indexVisit(currentVisit);
+  }
+  currentVisit = null;
+}
+
+api.tabs.onActivated.addListener(async (info) => {
+  flushVisit();
+  try {
+    const tab = await api.tabs.get(info.tabId);
+    currentVisit = isIndexable(tab.url)
+      ? { tabId: info.tabId, url: tab.url, title: tab.title || '', since: Date.now() }
+      : null;
+  } catch {
+    currentVisit = null;
+  }
+});
+
+api.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (changeInfo.status !== 'complete' || !currentVisit || tabId !== currentVisit.tabId) return;
+  // Navigated while it was the active tab — restart the dwell clock.
+  currentVisit = isIndexable(tab.url)
+    ? { tabId, url: tab.url, title: tab.title || '', since: Date.now() }
+    : null;
+});
+
+api.tabs.onRemoved.addListener((tabId) => {
+  if (currentVisit && currentVisit.tabId === tabId) flushVisit();
+});
+
+// Alt-Tab to another window: flush the engaged page instead of losing it.
+try {
+  api.windows.onFocusChanged.addListener((windowId) => {
+    if (windowId === api.windows.WINDOW_ID_NONE) flushVisit();
+  });
+} catch { /* unsupported */ }
 
 console.log('SelfSearch background loaded');

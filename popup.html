@@ -88,9 +88,22 @@
 <body>
   <h2>🔍 SelfSearch</h2>
 
+  <div id="onboarding" class="status info">
+    <b>Getting started</b>
+    <ol style="margin:6px 0 0 16px; padding:0;">
+      <li>Index a page below</li>
+      <li>Add a friend's npub in the P2P section</li>
+      <li>Search from the address bar: <b>ss&nbsp;query</b></li>
+    </ol>
+  </div>
+
   <div class="section">
     <label>📸 INDEX THIS PAGE</label>
     <button id="indexBtn">📸 INDEX THIS PAGE</button>
+    <label style="display:flex; align-items:center; gap:8px; margin:8px 0;">
+      <input type="checkbox" id="autoIndexCheckbox" style="width:auto;">
+      <span style="font-weight:normal; text-transform:none;">Auto-index pages I spend time on <small style="display:inline; margin:0;">(URL + title only)</small></span>
+    </label>
     <label>KEYWORDS FOR THIS PAGE <span style="font-weight:normal; text-transform:none;">(optional, comma/space separated)</span></label>
     <input type="text" id="keywordsInput" placeholder="e.g. recipe, sourdough" autocomplete="off">
     <div id="indexStatus" class="status"></div>

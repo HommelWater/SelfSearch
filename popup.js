@@ -1,9 +1,13 @@
 import { browserApi } from './core/capture.js';
+import { docCount } from './core/db.js';
 
 const api = browserApi();
 
+const onboardingDiv = document.getElementById('onboarding');
+
 const indexBtn = document.getElementById('indexBtn');
 const keywordsInput = document.getElementById('keywordsInput');
+const autoIndexCheckbox = document.getElementById('autoIndexCheckbox');
 const indexStatus = document.getElementById('indexStatus');
 const openSearchBtn = document.getElementById('openSearchBtn');
 
@@ -26,7 +30,12 @@ function short(npub, n = 16) {
 async function loadSettings() {
   const resp = await api.runtime.sendMessage({ action: 'getSettings' });
   if (!resp?.success) return;
+  autoIndexCheckbox.checked = !!resp.settings.autoIndex;
 }
+
+autoIndexCheckbox.addEventListener('change', () => {
+  api.runtime.sendMessage({ action: 'saveSettings', values: { autoIndex: autoIndexCheckbox.checked } });
+});
 
 indexBtn.addEventListener('click', async () => {
   indexBtn.disabled = true;
@@ -118,6 +127,11 @@ async function meshStatus() {
     'info'
   );
   renderFriends(s.friends, s.connected);
+
+  // Hide the getting-started card once there's a friend or at least one page.
+  const hasFriend = (s.friends && s.friends.length) > 0;
+  const hasDocs = (await docCount()) > 0;
+  onboardingDiv.style.display = hasFriend || hasDocs ? 'none' : 'block';
 }
 
 maxHopsInput.addEventListener('change', async () => {

@@ -159,4 +159,11 @@ api.runtime.onMessage.addListener((msg) => {
 goBtn.addEventListener('click', run);
 queryInput.addEventListener('keydown', e => { if (e.key === 'Enter') run(); });
 
-run();
+// Support ?q= from the omnibox / external opens.
+const urlQuery = new URLSearchParams(location.search).get('q');
+if (urlQuery) {
+  queryInput.value = urlQuery;
+  run();
+} else {
+  run();
+}

@@ -28,9 +28,13 @@ Load the extension unpacked:
    *Index this page*. The page's own text is analyzed locally to extract
    `{title, description, keywords, url, timestamp}`. Add optional keywords of
    your own in the popup before indexing.
-2. **Search.** Open the extension popup → *Open Search*, or load `search.html`.
-   Results are ranked, tagged (local / peer), and shown with the page's stored
-   timestamp. Empty query shows your recently-indexed pages.
+2. **Auto-index (optional).** Tick *Auto-index pages I spend time on* in the
+   popup — pages you keep open for a few seconds get indexed by URL + title
+   automatically, with no manual clicks.
+3. **Search.** Type `ss <query>` in the address bar (omnibox), or open the
+   extension popup → *Open Search*. Results are ranked, tagged (local / peer),
+   and shown with the page's stored timestamp. Empty query shows your
+   recently-indexed pages.
 
 The extension stores everything in IndexedDB on your machine. Screenshots are
 kept locally and never shared.
