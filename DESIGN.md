@@ -133,12 +133,21 @@ routing — see [Scaling beyond two hops](#scaling-beyond-two-hops).
 | `backfill_request`   | `{ friendNpub, since }` — proactive sync, friends only |
 | `backfill`           | `{ docs: [...] }` — full doc set, friends only |
 | `tombstone`          | `{ url, author }` — signed delete (relay kind `25016`); also sent over the data channel |
+| `doc_request`        | `{ url }` — ask connected peers for a signed copy (repair) |
+| `doc_response`       | `{ doc }` — signed wire doc back |
 
 Every wire doc (`backfill`/`query_answer`) carries a **per-doc author signature**
 over its canonical payload, so caches can verify integrity and repair from
 peers. **Tombstones** are signed deletes: a node drops a cached doc only on a
 valid tombstone from its author, never on mere absence. A re-added page with a
 newer timestamp wins over an older tombstone.
+
+**Repair:** each node keeps a **manifest** (owned `url → content hash`). A
+reconciliation pass compares it against the local docs; anything missing or
+hash-mismatched was lost unintentionally (a crash, a partial write — *not* LRU
+eviction, which is never repaired). The node asks connected peers for a signed
+copy (`doc_request`/`doc_response`), verifies it, and restores it. Because docs
+are signed, a restored copy is guaranteed authentic.
 
 ## Query flow (search)
 

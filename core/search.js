@@ -3,6 +3,31 @@ import { docTerms, tokenize } from './tokenize.js';
 
 const MAX_QUERY_CACHE = 200;
 
+// Deterministic JSON (sorted keys) so content hashes are reproducible.
+function canonicalText(obj) {
+  if (Array.isArray(obj)) return '[' + obj.map(canonicalText).join(',') + ']';
+  if (obj && typeof obj === 'object') {
+    return '{' + Object.keys(obj).sort()
+      .map(k => `"${k}":${canonicalText(obj[k])}`).join(',') + '}';
+  }
+  return JSON.stringify(obj);
+}
+
+// Content hash of a doc's searchable fields — stored in the manifest so a
+// missing or corrupt doc can be detected and repaired from peer caches.
+export async function docHash(doc) {
+  const canonical = canonicalText({
+    url: doc.url,
+    title: doc.title || '',
+    description: doc.description || '',
+    direct_keywords: doc.direct_keywords || '',
+    related_keywords: doc.related_keywords || '',
+    timestamp: doc.timestamp || 0
+  });
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonical));
+  return [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
 // --- Inverted index maintenance -------------------------------------------
 
 async function unindexTerms(indexStore, doc) {
@@ -44,6 +69,7 @@ export async function saveDoc(doc, imageBlob) {
     await tx.objectStore('images').put({ hash: doc.image_hash, blob: imageBlob });
   }
   await tx.done;
+  await db.put('manifest', { url: doc.url, hash: await docHash(doc), ts: Date.now() });
   return doc;
 }
 
@@ -85,6 +111,8 @@ export async function deleteDoc(url) {
       removed = true;
     }
   }
+
+  if (wasOwned) await db.delete('manifest', url);
 
   return { removed, wasOwned };
 }

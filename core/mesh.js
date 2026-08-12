@@ -4,7 +4,7 @@ import {
   schnorr, sha256, bytesToHex, hexToBytes
 } from '../lib/nostr-deps.js';
 import { settings, getDB } from './db.js';
-import { search as localSearch, allIndexedTerms } from './search.js';
+import { search as localSearch, allIndexedTerms, saveDoc, docHash } from './search.js';
 import { tokenize } from './tokenize.js';
 import { BloomFilter } from './bloom.js';
 
@@ -15,6 +15,7 @@ const INVITE_KIND = 25013;  // friend invite: { invitee, message }
 const ACCEPT_KIND = 25014;  // invite accept: { inviter, invitee }
 const TOMBSTONE_KIND = 25016; // signed delete: { url, author }
 const TOMBSTONE_CAP = 5000;
+const REPAIR_TIMEOUT = 30 * 1000; // re-request a lost doc after this long
 const FILTER_INTERVAL = 30 * 1000;
 const GOSSIP_SINCE = 3600;  // seconds of past gossip to replay on subscribe
 const MAX_HOPS_CAP = 5;
@@ -186,6 +187,86 @@ async function handleTombstoneEvent(e) {
     await applyTombstone(authorNpub, url, e.created_at);
     log(`tombstone ${url} by ${authorNpub.slice(0, 12)}`);
   } catch { /* ignore malformed */ }
+}
+
+// --- Repair (self-healing) ---------------------------------------------------
+
+// Populate the manifest once from existing docs so pre-existing pages are
+// trackable too.
+async function ensureManifest(db) {
+  if ((await db.getAll('manifest')).length) return;
+  const docs = await db.getAll('docs');
+  for (const d of docs) {
+    await db.put('manifest', { url: d.url, hash: await docHash(d), ts: Date.now() });
+  }
+}
+
+// Compare the manifest against the actual docs. Anything missing or with a
+// mismatched content hash was lost unintentionally — request a signed copy
+// from peers and restore it (LRU cache evictions are never repaired).
+async function reconcileOwnedDocs() {
+  if (!state || !state.started) return [];
+  const db = await getDB();
+  await ensureManifest(db);
+  const manifest = await db.getAll('manifest');
+  if (!manifest.length) return [];
+
+  const docsStore = db.transaction('docs').store;
+  const lost = [];
+  for (const m of manifest) {
+    const doc = await docsStore.get(m.url);
+    if (!doc) {
+      lost.push({ url: m.url, reason: 'missing' });
+    } else if ((await docHash(doc)) !== m.hash) {
+      lost.push({ url: m.url, reason: 'corrupt' });
+    }
+  }
+
+  const now = Date.now();
+  for (const { url } of lost) {
+    if (now - (state.repairing.get(url) || 0) < REPAIR_TIMEOUT) continue;
+    state.repairing.set(url, now);
+    for (const [npub] of state.p2p.connections) sendSafe(npub, { type: 'doc_request', url });
+  }
+  return lost;
+}
+
+// A peer asks for a doc to repair its index — serve our own (signed) or any
+// signed cached copy.
+async function handleDocRequest(sender, msg) {
+  const url = String(msg.url || '');
+  if (!url) return;
+  const db = await getDB();
+  const own = await db.get('docs', url);
+  if (own) {
+    sendSafe(sender, { type: 'doc_response', doc: { ...toWireDoc(own), authorNpub: state.npub, timestamp: own.timestamp, sig: signDoc(own) } });
+    return;
+  }
+  const cached = await db.getAll('docCache');
+  const hit = cached.find(c => c.url === url);
+  if (hit) {
+    sendSafe(sender, {
+      type: 'doc_response',
+      doc: { url: hit.url, title: hit.title, description: hit.description,
+        direct_keywords: hit.direct_keywords || '', related_keywords: hit.related_keywords || '',
+        timestamp: hit.timestamp, authorNpub: hit.authorNpub, sig: hit.sig }
+    });
+  }
+}
+
+// We were repairing a doc and a peer sent a signed copy — restore it.
+async function handleDocResponse(sender, msg) {
+  const d = msg.doc;
+  if (!d || !d.url || !d.sig) return;
+  if (!state.repairing.has(d.url)) return;
+  if (!verifyDoc(d)) return;
+  state.repairing.delete(d.url);
+  await saveDoc({
+    url: d.url, title: d.title || '', description: d.description || '',
+    direct_keywords: d.direct_keywords || '', related_keywords: d.related_keywords || '',
+    timestamp: d.timestamp || Math.floor(Date.now() / 1000)
+  });
+  log(`[repair] restored ${d.url}`);
 }
 
 async function publishTrust(trusted, maxHops) {
@@ -554,6 +635,10 @@ function handlePeerMessage(npub, msg) {
     // Data-channel tombstone: the sender is the author, so it only affects
     // cached docs attributed to them.
     applyTombstone(npub, msg.url, Math.floor(Date.now() / 1000)).catch(() => {});
+  } else if (msg.type === 'doc_request') {
+    handleDocRequest(npub, msg).catch(() => {});
+  } else if (msg.type === 'doc_response') {
+    handleDocResponse(npub, msg).catch(err => console.warn('[mesh] repair error', err));
   }
 }
 
@@ -704,6 +789,7 @@ export async function startMesh() {
     peerFilters: new Map(), peerFilterObjs: new Map(), filterSeq: 0,
     pendingQueries: new Map(), pendingRelay: new Map(), seenQueries: new Map(),
     lastBackfillBy: new Map(), cachedTerms: new Set(), cacheDirty: true,
+    repairing: new Map(),
     started: false, starting: false, lastError: null
   };
   state.starting = true;
@@ -744,8 +830,12 @@ export async function startMesh() {
     }
 
     state.syncTimer = setInterval(() => syncNow(), FILTER_INTERVAL);
-    state.backfillTimer = setInterval(() => requestBackfills(), BACKFILL_INTERVAL);
+    state.backfillTimer = setInterval(() => {
+      requestBackfills();
+      reconcileOwnedDocs().catch(() => {});
+    }, BACKFILL_INTERVAL);
     syncNow();
+    reconcileOwnedDocs().catch(err => console.warn('[mesh] reconcile error', err));
 
     state.lastError = null;
     state.started = true;
@@ -902,6 +992,11 @@ export async function handleMeshRequest(request) {
       state.cacheDirty = true;
       await publishFilter();
       return { success: true };
+    }
+
+    case 'reconcileDocs': {
+      const lost = await reconcileOwnedDocs();
+      return { success: true, lost };
     }
 
     case 'search': {
