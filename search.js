@@ -207,6 +207,11 @@ function peerName(npub, profiles) {
   return p && p.name ? p.name : short(npub);
 }
 
+function peerHasName(npub, profiles) {
+  const p = profiles[npub];
+  return !!(p && p.name);
+}
+
 function renderInvites(invites, profiles) {
   invitesList.innerHTML = '';
   const pending = invites || [];
@@ -281,8 +286,9 @@ function renderFriends(friends, connected, profiles) {
     const p = profiles[f] || {};
     const label = document.createElement('button');
     label.className = 'friend-link';
-    label.innerHTML = `<span class="fa">${p.avatar || '👤'}</span> ${peerName(f, profiles)}<span class="fsub">${short(f)} · view index →</span>`;
-    label.addEventListener('click', () => openPeerDetail(f, profiles));
+    const fsub = peerHasName(f, profiles) ? short(f) + ' · view index →' : 'view index →';
+    label.innerHTML = `<span class="fa">${p.avatar || '👤'}</span> ${peerName(f, profiles)}<span class="fsub">${fsub}</span>`;
+    label.addEventListener('click', () => openPeerDetail(f, profiles, connected));
     row.appendChild(label);
 
     const rm = document.createElement('button');
@@ -306,11 +312,11 @@ const peerDetail = document.getElementById('peerDetail');
 const peerDetailContent = document.getElementById('peerDetailContent');
 let currentPeerDetail = null;
 
-function openPeerDetail(npub, profiles) {
+function openPeerDetail(npub, profiles, connected) {
   currentPeerDetail = npub;
   peersMain.style.display = 'none';
   peerDetail.style.display = '';
-  loadPeerDetail(npub, profiles);
+  loadPeerDetail(npub, profiles, connected);
 }
 
 function closePeerDetail() {
@@ -322,12 +328,13 @@ function closePeerDetail() {
 
 document.getElementById('peerDetailBack').addEventListener('click', closePeerDetail);
 
-async function loadPeerDetail(npub, profiles) {
+async function loadPeerDetail(npub, profiles, connected) {
   const p = profiles[npub] || {};
   peerDetailContent.innerHTML = '<div class="empty">Loading…</div>';
 
   const resp = await p2p('getPeerDocs', { npub });
   const docs = (resp && resp.success) ? resp.docs : [];
+  const isConnected = connected && connected.includes(npub);
 
   peerDetailContent.innerHTML = '';
   const card = document.createElement('div');
@@ -341,9 +348,6 @@ async function loadPeerDetail(npub, profiles) {
   const who = document.createElement('div');
   who.className = 'who';
   who.textContent = peerName(npub, profiles);
-  const small = document.createElement('small');
-  small.textContent = ' ' + short(npub);
-  who.appendChild(small);
   head.appendChild(who);
   card.appendChild(head);
   if (p.bio) {
@@ -352,10 +356,16 @@ async function loadPeerDetail(npub, profiles) {
     bio.textContent = p.bio;
     card.appendChild(bio);
   }
-  const count = document.createElement('div');
-  count.className = 'bio';
-  count.textContent = `${docs.length} indexed page${docs.length === 1 ? '' : 's'} (cached)`;
-  card.appendChild(count);
+  const npubLine = document.createElement('div');
+  npubLine.className = 'bio';
+  npubLine.textContent = npub;
+  card.appendChild(npubLine);
+  const meta = document.createElement('div');
+  meta.className = 'bio';
+  meta.textContent =
+    `${isConnected ? '● connected' : '○ not connected'} · ` +
+    `${docs.length} indexed page${docs.length === 1 ? '' : 's'} (cached)`;
+  card.appendChild(meta);
   peerDetailContent.appendChild(card);
 
   if (!docs.length) {
@@ -424,9 +434,11 @@ function renderPeerFeed(recentByPeer, profiles) {
     const who = document.createElement('div');
     who.className = 'who';
     who.textContent = peerName(npub, profiles);
-    const small = document.createElement('small');
-    small.textContent = ' ' + short(npub);
-    who.appendChild(small);
+    if (peerHasName(npub, profiles)) {
+      const small = document.createElement('small');
+      small.textContent = ' ' + short(npub);
+      who.appendChild(small);
+    }
     head.appendChild(who);
     card.appendChild(head);
 

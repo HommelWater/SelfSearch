@@ -440,7 +440,7 @@ function onGossipEvent(e) {
     try {
       const { truster, trusted, maxHops } = JSON.parse(e.content);
       if (!truster || !trusted || !Number.isFinite(maxHops)) return;
-      if (e.pubkey !== truster) return; // must be self-signed
+      if (nip19.npubEncode(e.pubkey) !== truster) return; // must be self-signed
       if (!verifyEvent(e)) return;
       storeEdge(truster, trusted, Math.max(0, Math.min(maxHops, MAX_HOPS_CAP)));
       log(`trust ${truster.slice(0, 12)} -> ${trusted.slice(0, 12)} (${maxHops})`);
@@ -449,15 +449,16 @@ function onGossipEvent(e) {
     try {
       const { bloom, termCount, seq } = JSON.parse(e.content);
       if (!bloom || !Number.isFinite(termCount) || !Number.isFinite(seq)) return;
-      state.peerFilters.set(e.pubkey, { bloom, termCount, seq, ts: Date.now() });
-      state.peerFilterObjs.set(e.pubkey, BloomFilter.fromJSON(bloom));
+      const npub = nip19.npubEncode(e.pubkey);
+      state.peerFilters.set(npub, { bloom, termCount, seq, ts: Date.now() });
+      state.peerFilterObjs.set(npub, BloomFilter.fromJSON(bloom));
     } catch { /* ignore malformed */ }
   } else if (e.kind === PROFILE_KIND) {
     try {
       const profile = JSON.parse(e.content);
       if (!profile || typeof profile !== 'object') return;
       if (!verifyEvent(e)) return;
-      storePeerProfile(e.pubkey, profile, e.created_at);
+      storePeerProfile(nip19.npubEncode(e.pubkey), profile, e.created_at);
     } catch { /* ignore malformed */ }
   } else if (e.kind === INVITE_KIND) {
     handleInviteEvent(e).catch(() => {});
