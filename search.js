@@ -287,7 +287,15 @@ function renderFriends(friends, connected, profiles) {
     const label = document.createElement('button');
     label.className = 'friend-link';
     const fsub = peerHasName(f, profiles) ? short(f) + ' · view index →' : 'view index →';
-    label.innerHTML = `<span class="fa">${p.avatar || '👤'}</span> ${peerName(f, profiles)}<span class="fsub">${fsub}</span>`;
+    const fa = document.createElement('span');
+    fa.className = 'fa';
+    fa.textContent = p.avatar || '👤';
+    label.appendChild(fa);
+    label.appendChild(document.createTextNode(' ' + peerName(f, profiles)));
+    const fsubEl = document.createElement('span');
+    fsubEl.className = 'fsub';
+    fsubEl.textContent = fsub;
+    label.appendChild(fsubEl);
     label.addEventListener('click', () => openPeerDetail(f, profiles, connected));
     row.appendChild(label);
 
