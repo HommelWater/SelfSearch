@@ -398,6 +398,10 @@ async function cachePeerDocs(docs) {
     if (!d || !d.url || !d.authorNpub || !d.sig) continue;
     if (!verifyDoc(d)) continue;                    // tampered / unsigned → drop
     if (await isTombstoned(d.authorNpub, d.url, d.timestamp)) continue; // author deleted it
+    // Last-write-wins: never let an older (but still authentic) copy roll
+    // back a newer cached one — a stale peer shouldn't downgrade our cache.
+    const existing = await db.get('docCache', `${d.authorNpub}|${d.url}`);
+    if (existing && (existing.timestamp || 0) > (d.timestamp || 0)) continue;
     const terms = new Set([
       ...tokenize(d.title || ''),
       ...tokenize(d.description || ''),
@@ -563,9 +567,11 @@ function handleAnswer(sender, msg) {
   if (results.length) cachePeerDocs(results).catch(err => console.warn('[mesh] cache answers failed', err));
   const pending = state.pendingQueries.get(queryId);
   if (pending) {
-    // We originated this query — aggregate the answers.
+    // We originated this query — aggregate the answers. Only results carrying
+    // a valid author signature are shown: a lying peer can inject forged or
+    // tampered results, and those must never reach the user.
     for (const r of results) {
-      if (!r || !r.url) continue;
+      if (!r || !r.url || !r.sig || !verifyDoc(r)) continue;
       const existing = pending.results.get(r.url);
       if (existing) {
         existing.matchCount = Math.max(existing.matchCount, r.matchCount || 0);

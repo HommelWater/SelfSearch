@@ -44,19 +44,16 @@ class FakeNostrP2P {
     sentLog.push({ to: npub, msg });
     if (msg.type === 'query') {
       setTimeout(() => {
+        const result = signWireDoc(realDeps, skFriend, {
+          authorNpub: FRIEND_NPUB, url: 'https://remote.example/result',
+          title: 'Remote Result', description: 'found on the remote peer',
+          direct_keywords: msg.query, related_keywords: '',
+          timestamp: Math.floor(Date.now() / 1000)
+        });
         this.options.onMessage(npub, {
           type: 'query_answer',
           queryId: msg.queryId,
-          results: [{
-            url: 'https://remote.example/result',
-            title: 'Remote Result',
-            description: 'found on the remote peer',
-            timestamp: Math.floor(Date.now() / 1000),
-            direct_keywords: msg.query,
-            related_keywords: '',
-            authorNpub: 'npub1remote',
-            matchCount: 2
-          }]
+          results: [{ ...result, matchCount: 2 }]
         });
       }, 10);
     }
@@ -82,8 +79,10 @@ mock.module(new URL('../lib/nostr-deps.js', import.meta.url), {
 
 const { saveDoc } = await import('../core/search.js');
 const mesh = await import('../core/mesh.js');
+const { signWireDoc } = await import('./helpers.mjs');
 
-const FRIEND_NPUB = realDeps.nip19.npubEncode(realDeps.getPublicKey(realDeps.generateSecretKey()));
+const skFriend = realDeps.generateSecretKey();
+const FRIEND_NPUB = realDeps.nip19.npubEncode(realDeps.getPublicKey(skFriend));
 const OTHER_NPUB = realDeps.nip19.npubEncode(realDeps.getPublicKey(realDeps.generateSecretKey()));
 
 test('peer search returns local + remote results', async () => {

@@ -155,6 +155,52 @@ test('publishTombstone broadcasts to friends and stores locally', async () => {
   assert.ok(await db.get('tombstones', `${st.status.npub}|${url}`), 'tombstone stored locally');
 });
 
+test('an older cached copy never overwrites a newer one (last-write-wins)', async () => {
+  const now = Math.floor(Date.now() / 1000);
+  const newer = signWireDoc(realDeps, skFriend, {
+    authorNpub: FRIEND, url: 'https://lww.example/1', title: 'Newer',
+    description: 'lww newer', direct_keywords: 'lww', related_keywords: '', timestamp: now
+  });
+  lastP2P.deliverFrom(FRIEND, { type: 'backfill', since: 0, docs: [newer] });
+  await new Promise(r => setTimeout(r, 20));
+
+  const older = signWireDoc(realDeps, skFriend, {
+    authorNpub: FRIEND, url: 'https://lww.example/1', title: 'Older (stale)',
+    description: 'lww older', direct_keywords: 'lww', related_keywords: '', timestamp: now - 1000
+  });
+  lastP2P.deliverFrom(FRIEND, { type: 'backfill', since: 0, docs: [older] });
+  await new Promise(r => setTimeout(r, 20));
+
+  const c = await cached('https://lww.example/1');
+  assert.ok(c, 'doc cached');
+  assert.equal(c.title, 'Newer', 'older copy must not replace the newer one');
+});
+
+test('forged query answers are dropped before being shown', async () => {
+  await mesh.handleMeshRequest({ p2p: true, op: 'addFriend', npub: FRIEND });
+  const now = Math.floor(Date.now() / 1000);
+  const real = signWireDoc(realDeps, skFriend, {
+    authorNpub: FRIEND, url: 'https://forge.example/real', title: 'Real Page',
+    description: 'realforge needle', direct_keywords: 'needle', related_keywords: '', timestamp: now
+  });
+  const forged = { ...signWireDoc(realDeps, skFriend, {
+    authorNpub: FRIEND, url: 'https://forge.example/forged', title: 'Real-ish',
+    description: 'forge needle', direct_keywords: 'needle', related_keywords: '', timestamp: now
+  }), title: 'FORGED' };
+
+  const respPromise = mesh.handleMeshRequest({
+    p2p: true, op: 'search', query: 'needle', queryId: 'forge-q', timeout: 3000
+  });
+  await new Promise(r => setTimeout(r, 50));
+  lastP2P.deliverFrom(FRIEND, { type: 'query_answer', queryId: 'forge-q', results: [real, forged] });
+  const resp = await respPromise;
+
+  assert.equal(resp.success, true);
+  const urls = resp.results.map(r => r.url);
+  assert.ok(urls.includes('https://forge.example/real'), 'valid answer is shown');
+  assert.ok(!urls.includes('https://forge.example/forged'), 'forged answer is dropped');
+});
+
 test('trust declarations propagate over the data channel into the trust graph', async () => {
   const skOther = realDeps.generateSecretKey();
   const OTHER = realDeps.nip19.npubEncode(realDeps.getPublicKey(skOther));
