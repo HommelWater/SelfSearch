@@ -11,12 +11,12 @@ mesh (signaling via Nostr relays) and route queries using bloom filters over a
 hop-limited web of trust.
 
 > **Status:** local engine (capture → index → search) works; P2P mesh (nostr
-> identity, friends, trust web, relay gossip) works; **peer search** (bloom-filter
-> query routing over the mesh, with streaming results) works; **redundancy
-> (`docCache`)** works — peers' docs are cached on-demand and backfilled from
-> friends, served in queries, and covered by the routing filter. **Profiles and
-> a peers feed** let you see who your peers are and what they've recently
-> indexed. See [DESIGN.md](DESIGN.md) for the full architecture.
+> identity, friends, trust web, data-channel gossip) works; **peer search**
+> (bloom-filter query routing over the mesh, with streaming results) works;
+> **redundancy (`docCache`)** works — peers' docs are cached on-demand and
+> backfilled from friends, served in queries, and covered by the routing filter.
+> **Profiles and a peers feed** let you see who your peers are and what they've
+> recently indexed. See [DESIGN.md](DESIGN.md) for the full architecture.
 
 ## Install
 

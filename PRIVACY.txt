@@ -20,7 +20,7 @@ The extension can connect to other users you explicitly trust and search across 
     Text metadata (URL, title, description, keywords, timestamp) of pages in your index.
     Your profile (name, avatar, bio) if you set one.
 
-Screenshots are never shared with peers. Peer-to-peer sharing is opt-in and only involves peers you explicitly add. Your profile and trust declarations are published to public relay servers so peers can find and recognize you.
+Screenshots are never shared with peers. Peer-to-peer sharing is opt-in and only involves peers you explicitly add. Relays are used only to connect peers (WebRTC signaling) and to deliver friend invitations; your profile, trust declarations, and index data are exchanged directly with peers you have added over encrypted data channels.
 Information Sharing and Transfer
 
 We do not sell, share, or transfer your data to third parties. The only transfers occur when you explicitly enable peer-to-peer search: text metadata and queries are exchanged with peers you have added.

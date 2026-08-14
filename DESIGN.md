@@ -78,12 +78,13 @@ over Nostr relays. Extraction is fully local.
 
 Trust is transitive, hop-limited.
 
-- A user explicitly **adds a friend** by npub. Adding a friend publishes a
-  signed **trust declaration** (a nostr event, kind e.g. `25010`):
-  `{ signer: npubA, trusts: npubB, maxHops: N }`.
-- Trust declarations are gossiped through the mesh (they're small and signed).
+- A user explicitly **adds a friend** by npub. Adding a friend sends a signed
+  **trust declaration** `{ truster, trusted, maxHops }` to every connected
+  peer over the data channel.
+- Trust declarations are re-sent on connect and on a maintenance interval, so
+  the mesh converges on the same trust web (they're small and signed).
 - Every node builds a local **trust graph** from the declarations it has seen
-  (only accepting declarations signed by nodes it already trusts). BFS from your
+  (only accepting declarations signed by their own truster). BFS from your
   own key computes **trust distance**: a node at depth ≤ `maxHops` (default 2)
   is queryable.
 - `maxHops` per trust declaration lets a friend cap how far *their* network
@@ -94,10 +95,16 @@ Trust is transitive, hop-limited.
 | Store      | Key                | Content |
 |------------|--------------------|---------|
 | `docs`     | `url`              | Your own indexed pages: `{url, title, description, direct_keywords, related_keywords, timestamp}` + `image_hash` (image stays local) |
-| `docCache` | `(authorNpub, url)` | Copies of peers' docs: same fields + `authorNpub` + `signature` + `timestamp` (author's) + `addedAt` |
-| `queryCache` | normalized query | `{query, results, answeredBy[], ts}` — rolling LRU |
+| `docCache` | `id` = `authorNpub\|url` | Copies of peers' docs: same fields + `authorNpub` + `sig` + `timestamp` (author's) + `addedAt` (LRU) + `terms` |
+| `queryCache` | normalized query | `{query, results, ts}` — rolling LRU |
 | `index`    | term → `[url...]`  | Inverted index over `docs` (and optionally `docCache`) for local search |
-| `settings` | key                | nostr secret key, friends, `maxHops`, cache caps |
+| `trust`    | `truster\|trusted` | Trust edges (the local trust graph; populated from our own friends + peers' declarations) |
+| `profiles` | `npub`             | Peer profiles `{name, avatar, bio, ts}` received over the channel |
+| `invites`  | `in\|npub` / `out\|npub` | Friend invites (pending/outgoing) |
+| `tombstones` | `authorNpub\|url` | Signed deletes `{url, authorNpub, ts}` |
+| `manifest` | `url`              | Content hash of each owned doc (drives repair + device sync) |
+| `images`   | `hash`             | Screenshots, stored locally, never shared |
+| `settings` | key                | nostr secret key, friends, `maxHops`, `syncDevices`, cache caps, `acceptedInvites`, profile |
 
 Screenshots/images are **never** shared; they live only under the capturing
 node's own storage.
@@ -106,8 +113,9 @@ node's own storage.
 
 - Each node maintains `filter_self`: a bloom filter over the terms in
   **`docs` ∪ `docCache`** — everything it can serve.
-- Filters are **gossiped** periodically (broadcast on connect, then on a
-  maintenance interval and on significant local index growth).
+- Filters are **shared with connected peers** over the data channel (sent on
+  connect, then on a maintenance interval and on significant local index
+  growth).
 - Filter updates are signed and carry a sequence number so stale ones are
   ignored.
 - A bloom filter has no false negatives for its own set, only false positives —
@@ -122,17 +130,22 @@ routing — see [Scaling beyond two hops](#scaling-beyond-two-hops).
 
 ## Message protocol (over the data channel, all signed)
 
+Relays carry only two kinds of traffic: WebRTC **signaling** (kind `25000`,
+handled inside `lib/nostr-p2p.js`) and **friend invites** (kind `25013`).
+Everything else travels over the direct data channel:
+
 | Type                 | Payload |
 |----------------------|---------|
-| `trust_declaration`  | `{ truster, trusted, maxHops, sig }` — gossiped |
-| `filter`             | `{ bloom, seq, termCount }` — gossiped, who can serve what |
-| `aggregate_filter`   | `{ friend, bloom, horizon, seq }` — gossiped, subtree summaries for routing (kind `25015`) |
-| `profile`            | `{ name, avatar, bio }` — gossiped (relay kind `25012`), self-signed |
-| `query`              | `{ queryId, terms[], hops, budget, origin, path[] }` — forwardable |
+| `trust_declaration`  | `{ truster, trusted, maxHops }` — shared on connect + periodically |
+| `filter`             | `{ bloom, termCount, seq }` — shared, who can serve what |
+| `aggregate_filter`   | `{ friend, bloom, horizon, seq }` — subtree summaries for routing (kind `25015`) |
+| `profile`            | `{ name, avatar, bio }` — shared, self-signed |
+| `query`              | `{ queryId, query, hops, origin, path[], limit }` — forwardable |
 | `query_answer`       | `{ queryId, results: [{url, title, description, keywords, timestamp, authorNpub, sig}] }` |
-| `backfill_request`   | `{ friendNpub, since }` — proactive sync, friends only |
-| `backfill`           | `{ docs: [...] }` — full doc set, friends only |
-| `tombstone`          | `{ url, author }` — signed delete (relay kind `25016`); also sent over the data channel |
+| `backfill_request`   | `{ since }` — proactive sync, friends only |
+| `backfill`           | `{ since, docs: [...] }` — full doc set, friends only |
+| `tombstone`          | `{ url, authorNpub, ts, sig }` — signed delete, forwarded hop-by-hop |
+| `invite_accept`      | `{}` — "your invite was accepted", finalized over the channel |
 | `doc_request`        | `{ url }` — ask connected peers for a signed copy (repair) |
 | `doc_response`       | `{ doc }` — signed wire doc back |
 
@@ -221,8 +234,8 @@ is on a path to someone who has X?"
 - Because aggregates summarise whole subtrees, a query can reach content 4–5+
   edges away while each hop makes one onward decision.
 - This is the approach Gnutella's Query Routing Protocol used to scale to
-  millions of nodes; the mesh + relay gossip substrate needed here already
-  exists.
+  millions of nodes; the mesh + data-channel gossip substrate needed here
+  already exists.
 
 Bloom false positives may send a query down a dead end, so routing keeps a
 small **backtrack budget** (a bounded number of alternative paths) on top of
@@ -254,8 +267,9 @@ diameter) without overloading anyone.
 
 ### What this changes
 
-- **Protocol:** gossip an `aggregate_filter` (relay kind `25015`) alongside
-  `filter_self`; queries carry a `budget` field in addition to `hops`.
+- **Protocol:** gossip an `aggregate_filter` (kind `25015`, over the data
+  channel like today's `filter`) alongside `filter_self`; queries carry a
+  `budget` field in addition to `hops`.
 - **Trust stays the boundary:** aggregates are computed only from trusted
   peers' declarations, and forwarding only ever follows trusted edges.
 
