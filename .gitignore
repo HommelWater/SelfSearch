@@ -4,8 +4,5 @@
 # Local environment / secrets
 .env
 
-# Dependencies
-node_modules/
-
 # Leftover server data (root-owned, pending `sudo rm -rf src`)
 /src/

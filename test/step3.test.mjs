@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test, mock } from 'node:test';
-import 'fake-indexeddb/auto';
+import './vendor/fake-indexeddb/auto.mjs';
 
 globalThis.localStorage = {
   getItem: () => null,

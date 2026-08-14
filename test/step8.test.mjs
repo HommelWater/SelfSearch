@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import 'fake-indexeddb/auto';
+import './vendor/fake-indexeddb/auto.mjs';
 
 const { saveDoc, deleteDoc, search } = await import('../core/search.js');
 const { getDB } = await import('../core/db.js');

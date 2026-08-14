@@ -43,11 +43,13 @@ kept locally and never shared.
 
 ## Development
 
-    npm install   # pulls in fake-indexeddb for the tests
+No build step and no package manager. The extension is plain ES modules, and
+the tests use Node's built-in runner (the fake IndexedDB they need is vendored
+in `test/vendor/`, so there are no dependencies to install).
 
-Tests:
+Tests (requires only Node.js):
 
-    npm test
+    node test/run.mjs
 
 ## Repository layout
 
@@ -55,10 +57,7 @@ Tests:
 |------|---------|
 | `core/` | Engine: `bloom.js` (routing filter), `tokenize.js`, `db.js` (IndexedDB), `extract.js` (local DOM extraction), `capture.js`, `search.js`, `mesh.js` (p2p host: keys, trust graph, gossip) |
 | `lib/` | Vendored p2p libraries: `nostr-p2p.js` (WebRTC mesh), `nostr-deps.js`, `idb.js` |
-| `background.js` | MV3 background: captures, routes; hosts the mesh on Firefox |
-| `offscreen.html`/`offscreen.js` | Chrome-only persistent host for the WebRTC mesh |
-| `popup.*`, `search.*` | Extension UI |
-| `DESIGN.md` | Architecture + build plan |
+| `test/` | Tests (Node's built-in runner) + vendored `fake-indexeddb` |
 
 ## License
 
