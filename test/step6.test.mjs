@@ -57,17 +57,18 @@ const { signWireDoc } = await import('./helpers.mjs');
 const skFriend = realDeps.generateSecretKey();
 const FRIEND = realDeps.nip19.npubEncode(realDeps.getPublicKey(skFriend));
 
-test('setProfile stores locally and gossips a PROFILE_KIND event', async () => {
+test('setProfile stores locally and shares it over the direct channel', async () => {
   await mesh.handleMeshRequest({ p2p: true, op: 'status' });
+  await mesh.handleMeshRequest({ p2p: true, op: 'addFriend', npub: FRIEND });
+  sentLog.length = 0;
 
   const resp = await mesh.handleMeshRequest({ p2p: true, op: 'setProfile', name: 'Alice', avatar: '🌻', bio: 'hello from alice' });
   assert.equal(resp.success, true);
   assert.deepEqual(await settings.get('profile'), { name: 'Alice', avatar: '🌻', bio: 'hello from alice' });
 
-  const ev = pools[0].published.find(e => e.kind === 25012);
-  assert.ok(ev, 'a profile event should be gossiped');
-  const content = JSON.parse(ev.content);
-  assert.equal(content.name, 'Alice');
+  const sent = sentLog.find(e => e.to === FRIEND && e.msg.type === 'profile');
+  assert.ok(sent, 'profile should be sent to the connected friend');
+  assert.equal(sent.msg.profile.name, 'Alice');
 });
 
 test('getPeers returns profiles and recently-indexed peer docs', async () => {

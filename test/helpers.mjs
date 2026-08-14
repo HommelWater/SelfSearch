@@ -21,3 +21,12 @@ export function signWireDoc(deps, sk, d) {
   const sig = deps.bytesToHex(deps.schnorr.sign(msg, sk));
   return { ...payload, sig };
 }
+
+// Sign a tombstone (signed delete) the way mesh.js does, so a test can
+// fabricate a valid one from a peer.
+export function signTombstone(deps, sk, authorNpub, url, ts) {
+  const payload = { authorNpub, url, ts };
+  const msg = deps.sha256(new TextEncoder().encode(canonicalDoc(payload)));
+  const sig = deps.bytesToHex(deps.schnorr.sign(msg, sk));
+  return { type: 'tombstone', authorNpub, url, ts, sig };
+}

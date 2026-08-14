@@ -8,12 +8,10 @@ import { search as localSearch, allIndexedTerms, saveDoc, docHash } from './sear
 import { tokenize } from './tokenize.js';
 import { BloomFilter } from './bloom.js';
 
-const TRUST_KIND = 25010;   // trust declaration: { truster, trusted, maxHops }
-const FILTER_KIND = 25011;  // routing bloom filter gossip: { bloom, termCount, seq }
-const PROFILE_KIND = 25012; // peer profile: { name, avatar, bio }
+// Relays carry exactly two kinds of traffic, both addressed to a specific
+// pubkey: signaling (WebRTC handshakes, handled in lib/nostr-p2p.js) and
+// friend invites. Everything else travels over direct peer connections.
 const INVITE_KIND = 25013;  // friend invite: { invitee, message }
-const ACCEPT_KIND = 25014;  // invite accept: { inviter, invitee }
-const TOMBSTONE_KIND = 25016; // signed delete: { url, author }
 const TOMBSTONE_CAP = 5000;
 const REPAIR_TIMEOUT = 30 * 1000; // re-request a lost doc after this long
 const FILTER_INTERVAL = 30 * 1000;
@@ -22,6 +20,7 @@ const MAX_HOPS_CAP = 5;
 const QUERY_TIMEOUT = 2500; // hard cap to collect peer answers before returning
 const GRACE_MS = 500;       // extra window for 2-hop answers after all direct peers respond
 const SEEN_TTL = 20 * 1000; // keep query dedup/relay state this long
+const GOSSIP_DEDUP_TTL = 15 * 60 * 1000; // ignore re-delivered gossip events this long
 
 const DOC_CACHE_CAP = 20000;          // max cached peer docs before LRU eviction
 const BACKFILL_INTERVAL = 5 * 60 * 1000; // proactive friend sync cadence
@@ -47,6 +46,9 @@ function resolveRelays() {
 }
 
 const RELAYS = resolveRelays();
+
+const RELAY_FAIL_LOG_MS = 60 * 1000; // log each dead relay at most once a minute
+const relayFailLog = new Map();
 
 function log(...a) {
   console.log('[mesh]', ...a);
@@ -158,6 +160,24 @@ async function isTombstoned(authorNpub, url, docTs) {
   return !!(t && t.ts >= (docTs || 0));
 }
 
+// Sign a delete so it can propagate hop-by-hop through the mesh: every relay
+// hop forwards the signed tombstone, and any receiver verifies it against the
+// author's key before dropping their cached copy.
+function signTombstone(url, ts) {
+  const msg = sha256(new TextEncoder().encode(canonicalJson({ authorNpub: state.npub, url, ts })));
+  return bytesToHex(schnorr.sign(msg, state.sk));
+}
+
+function verifyTombstone(t) {
+  try {
+    const pkHex = nip19.decode(t.authorNpub).data;
+    const msg = sha256(new TextEncoder().encode(canonicalJson({ authorNpub: t.authorNpub, url: t.url, ts: t.ts })));
+    return schnorr.verify(hexToBytes(t.sig), msg, hexToBytes(pkHex));
+  } catch {
+    return false;
+  }
+}
+
 async function applyTombstone(authorNpub, url, ts) {
   const db = await getDB();
   await db.put('tombstones', { id: `${authorNpub}|${url}`, authorNpub, url, ts });
@@ -178,15 +198,22 @@ async function applyTombstone(authorNpub, url, ts) {
   }
 }
 
-async function handleTombstoneEvent(e) {
-  try {
-    const { url, author } = JSON.parse(e.content);
-    const authorNpub = nip19.npubEncode(e.pubkey);
-    if (!url || (author && author !== authorNpub)) return;
-    if (!verifyEvent(e)) return;
-    await applyTombstone(authorNpub, url, e.created_at);
-    log(`tombstone ${url} by ${authorNpub.slice(0, 12)}`);
-  } catch { /* ignore malformed */ }
+// A signed delete arrived over the data channel: verify it against the author,
+// apply it locally, and forward it so peers-of-peers drop their cached copies
+// too. Deduped so a tombstone doesn't bounce forever through the mesh.
+async function handleTombstone(sender, msg) {
+  const { url, authorNpub, ts, sig } = msg;
+  if (!url || !authorNpub || !Number.isFinite(ts) || !sig) return;
+  if (!verifyTombstone({ authorNpub, url, ts, sig })) return;
+  const key = `tomb|${authorNpub}|${url}|${ts}`;
+  const seenTs = state.seenEvents.get(key) || 0;
+  if (Date.now() - seenTs < GOSSIP_DEDUP_TTL) return;
+  state.seenEvents.set(key, Date.now());
+  await applyTombstone(authorNpub, url, ts);
+  for (const [npub] of state.p2p.connections) {
+    if (npub === sender) continue;
+    sendSafe(npub, { type: 'tombstone', url, authorNpub, ts, sig });
+  }
 }
 
 // --- Repair (self-healing) ---------------------------------------------------
@@ -269,28 +296,13 @@ async function handleDocResponse(sender, msg) {
   log(`[repair] restored ${d.url}`);
 }
 
-async function publishTrust(trusted, maxHops) {
-  const event = finalizeEvent({
-    kind: TRUST_KIND,
-    created_at: Math.floor(Date.now() / 1000),
-    tags: [],
-    content: JSON.stringify({ truster: state.npub, trusted, maxHops })
-  }, state.sk);
-  await Promise.allSettled(state.pool.publish(RELAYS, event));
-}
-
-// Gossip our profile so peers know who we are (self-signed, like the rest).
+// Share our profile with connected peers over the data channel.
 async function publishProfile() {
   if (!state) return;
   const profile = (await settings.get('profile')) || {};
   if (!profile.name && !profile.avatar && !profile.bio) return;
-  const event = finalizeEvent({
-    kind: PROFILE_KIND,
-    created_at: Math.floor(Date.now() / 1000),
-    tags: [],
-    content: JSON.stringify({ name: profile.name || '', avatar: profile.avatar || '', bio: profile.bio || '' })
-  }, state.sk);
-  await Promise.allSettled(state.pool.publish(RELAYS, event));
+  const msg = { type: 'profile', profile: { name: profile.name || '', avatar: profile.avatar || '', bio: profile.bio || '' } };
+  for (const [npub] of state.p2p.connections) sendSafe(npub, msg);
 }
 
 async function storePeerProfile(npub, profile, ts) {
@@ -298,15 +310,26 @@ async function storePeerProfile(npub, profile, ts) {
   await db.put('profiles', { npub, name: profile.name || '', avatar: profile.avatar || '', bio: profile.bio || '', ts });
 }
 
+// Share our trust declarations with connected peers over the data channel, so
+// friends-of-friends (and the mesh beyond) can build the same web of trust.
+function sendTrustDeclarations() {
+  if (!state) return;
+  const mine = state.edges.get(state.npub) || [];
+  for (const { trusted, maxHops } of mine) {
+    const msg = { type: 'trust_declaration', truster: state.npub, trusted, maxHops };
+    for (const [npub] of state.p2p.connections) sendSafe(npub, msg);
+  }
+}
+
 // Add someone to our trust web (friend + edge + connect). Used by direct add,
-// invite acceptance, and receiving an invite accept.
+// invite acceptance, and finalizing an accepted invite.
 async function addTrusted(npub) {
   if (!state.friends.includes(npub)) {
     state.friends.push(npub);
     await settings.set('friends', state.friends);
   }
   await storeEdge(state.npub, npub, state.maxHops);
-  await publishTrust(npub, state.maxHops);
+  sendTrustDeclarations();
   state.p2p.addPeer(npub);
   state.p2p.connect(npub);
 }
@@ -328,22 +351,20 @@ async function handleInviteEvent(e) {
   } catch { /* ignore malformed */ }
 }
 
-// An invite accept arrives via relays: the invitee accepted OUR invite, so add
-// them (we already wanted the connection).
-async function handleAcceptEvent(e) {
-  try {
-    const { inviter, invitee } = JSON.parse(e.content);
-    const accepter = nip19.npubEncode(e.pubkey);
-    if (inviter !== state.npub || invitee !== accepter) return;
-    if (!verifyEvent(e)) return;
-    await addTrusted(accepter);
-    const db = await getDB();
-    await db.delete('invites', `out|${accepter}`);
-    log(`invite accepted by ${accepter.slice(0, 12)}`);
-  } catch { /* ignore malformed */ }
+// The invitee accepted our invite over a direct connection — finalize the
+// friendship (we already wanted the connection).
+async function finalizeAcceptedInvite(npub) {
+  const db = await getDB();
+  const inv = await db.get('invites', `out|${npub}`);
+  if (!inv || inv.status !== 'pending') return;
+  await addTrusted(npub);
+  await db.delete('invites', `out|${npub}`);
+  log(`invite accepted by ${npub.slice(0, 12)}`);
 }
 
-async function publishFilter() {
+// Share our routing bloom filter with connected peers over the data channel,
+// so queries skip peers that cannot possibly match.
+async function sendFilter() {
   if (!state) return;
   await refreshCachedTerms();
   const terms = await allIndexedTerms();
@@ -351,13 +372,8 @@ async function publishFilter() {
   const bloom = BloomFilter.create(Math.max(1024, terms.length));
   bloom.addAll(terms);
   state.filterSeq++;
-  const event = finalizeEvent({
-    kind: FILTER_KIND,
-    created_at: Math.floor(Date.now() / 1000),
-    tags: [],
-    content: JSON.stringify({ bloom: bloom.toJSON(), termCount: terms.length, seq: state.filterSeq })
-  }, state.sk);
-  await Promise.allSettled(state.pool.publish(RELAYS, event));
+  const msg = { type: 'filter', bloom: bloom.toJSON(), termCount: terms.length, seq: state.filterSeq };
+  for (const [npub] of state.p2p.connections) sendSafe(npub, msg);
 }
 
 // --- docCache (peer-doc redundancy) ------------------------------------------
@@ -435,38 +451,15 @@ async function refreshCachedTerms() {
   state.cacheDirty = false;
 }
 
-function onGossipEvent(e) {
-  if (e.kind === TRUST_KIND) {
-    try {
-      const { truster, trusted, maxHops } = JSON.parse(e.content);
-      if (!truster || !trusted || !Number.isFinite(maxHops)) return;
-      if (nip19.npubEncode(e.pubkey) !== truster) return; // must be self-signed
-      if (!verifyEvent(e)) return;
-      storeEdge(truster, trusted, Math.max(0, Math.min(maxHops, MAX_HOPS_CAP)));
-      log(`trust ${truster.slice(0, 12)} -> ${trusted.slice(0, 12)} (${maxHops})`);
-    } catch { /* ignore malformed */ }
-  } else if (e.kind === FILTER_KIND) {
-    try {
-      const { bloom, termCount, seq } = JSON.parse(e.content);
-      if (!bloom || !Number.isFinite(termCount) || !Number.isFinite(seq)) return;
-      const npub = nip19.npubEncode(e.pubkey);
-      state.peerFilters.set(npub, { bloom, termCount, seq, ts: Date.now() });
-      state.peerFilterObjs.set(npub, BloomFilter.fromJSON(bloom));
-    } catch { /* ignore malformed */ }
-  } else if (e.kind === PROFILE_KIND) {
-    try {
-      const profile = JSON.parse(e.content);
-      if (!profile || typeof profile !== 'object') return;
-      if (!verifyEvent(e)) return;
-      storePeerProfile(nip19.npubEncode(e.pubkey), profile, e.created_at);
-    } catch { /* ignore malformed */ }
-  } else if (e.kind === INVITE_KIND) {
-    handleInviteEvent(e).catch(() => {});
-  } else if (e.kind === ACCEPT_KIND) {
-    handleAcceptEvent(e).catch(() => {});
-  } else if (e.kind === TOMBSTONE_KIND) {
-    handleTombstoneEvent(e).catch(() => {});
-  }
+// Invites are the only non-signaling traffic we accept from relays, and only
+// when addressed to our own pubkey (the subscription filters on #p). Relays
+// mirror every published event, so dedupe each invite once.
+function onInviteEvent(e) {
+  if (!e || !e.id) return;
+  const seenTs = state.seenEvents.get(e.id) || 0;
+  if (Date.now() - seenTs < GOSSIP_DEDUP_TTL) return;
+  state.seenEvents.set(e.id, Date.now());
+  handleInviteEvent(e).catch(() => {});
 }
 
 // --- Peer search ------------------------------------------------------------
@@ -659,9 +652,27 @@ function handlePeerMessage(npub, msg) {
   } else if (msg.type === 'backfill') {
     handleBackfill(npub, msg);
   } else if (msg.type === 'tombstone') {
-    // Data-channel tombstone: the sender is the author, so it only affects
-    // cached docs attributed to them.
-    applyTombstone(npub, msg.url, Math.floor(Date.now() / 1000)).catch(() => {});
+    // Signed delete: verify against the author, drop our cached copy, then
+    // forward so peers-of-peers learn of the deletion too.
+    handleTombstone(npub, msg).catch(() => {});
+  } else if (msg.type === 'profile') {
+    if (!msg.profile || typeof msg.profile !== 'object') return;
+    storePeerProfile(npub, msg.profile, Math.floor(Date.now() / 1000)).catch(() => {});
+  } else if (msg.type === 'filter') {
+    const { bloom, termCount, seq } = msg;
+    if (!bloom || !Number.isFinite(termCount) || !Number.isFinite(seq)) return;
+    state.peerFilters.set(npub, { bloom, termCount, seq, ts: Date.now() });
+    state.peerFilterObjs.set(npub, BloomFilter.fromJSON(bloom));
+  } else if (msg.type === 'trust_declaration') {
+    // A peer sharing who they trust. Data-channel messages are signed by the
+    // sender, so a declaration can only ever claim trust on the sender's own
+    // behalf (truster === npub). Feed it into our trust graph.
+    const { truster, trusted, maxHops } = msg;
+    if (truster !== npub || !trusted || !Number.isFinite(maxHops)) return;
+    storeEdge(truster, trusted, Math.max(0, Math.min(maxHops, MAX_HOPS_CAP))).catch(() => {});
+  } else if (msg.type === 'invite_accept') {
+    // They accepted our invite — finalize our side of the friendship.
+    finalizeAcceptedInvite(npub).catch(() => {});
   } else if (msg.type === 'doc_request') {
     handleDocRequest(npub, msg).catch(() => {});
   } else if (msg.type === 'doc_response') {
@@ -676,6 +687,9 @@ function pruneMeshState() {
   }
   for (const [qid, r] of state.pendingRelay) {
     if (now - r.ts > SEEN_TTL) state.pendingRelay.delete(qid);
+  }
+  for (const [id, ts] of state.seenEvents) {
+    if (now - ts > GOSSIP_DEDUP_TTL) state.seenEvents.delete(id);
   }
 }
 
@@ -770,14 +784,14 @@ function rankResults(results) {
     .sort((a, b) => b.score - a.score);
 }
 
-// Keep the network warm: re-gossip our routing filter and re-publish our trust
-// declarations so late-joining peers (and peers that missed earlier gossip)
-// can still learn who we trust.
+// Keep the network warm: re-share our profile, routing filter, and trust
+// declarations with connected peers so late joiners and missed messages
+// self-heal.
 function syncNow() {
   if (!state || !state.started) return;
-  publishFilter();
   publishProfile();
-  for (const f of state.friends) publishTrust(f, state.maxHops);
+  sendFilter();
+  sendTrustDeclarations();
   pruneMeshState();
 }
 
@@ -815,8 +829,8 @@ export async function startMesh() {
     friends: [], maxHops: 2, edges: new Map(),
     peerFilters: new Map(), peerFilterObjs: new Map(), filterSeq: 0,
     pendingQueries: new Map(), pendingRelay: new Map(), seenQueries: new Map(),
-    lastBackfillBy: new Map(), cachedTerms: new Set(), cacheDirty: true,
-    repairing: new Map(), syncDevices: false,
+    seenEvents: new Map(), lastBackfillBy: new Map(), cachedTerms: new Set(), cacheDirty: true,
+    repairing: new Map(), syncDevices: false, acceptedInvites: [],
     started: false, starting: false, lastError: null
   };
   state.starting = true;
@@ -829,24 +843,43 @@ export async function startMesh() {
 
     state.pool = new SimplePool({
       enableReconnect: true,
-      onRelayConnectionFailure: (url) => log(`relay unreachable: ${url}`)
+      onRelayConnectionFailure: (url) => {
+        const last = relayFailLog.get(url) || 0;
+        const now = Date.now();
+        if (now - last < RELAY_FAIL_LOG_MS) return;
+        relayFailLog.set(url, now);
+        log(`relay unreachable: ${url}`);
+      }
     });
+    // The only relay subscription: friend invites addressed to our pubkey.
+    // (Connection signaling is subscribed separately in NostrP2P, also filtered
+    // to our pubkey.)
     state.sub = state.pool.subscribeMany(
       RELAYS,
-      { kinds: [TRUST_KIND, FILTER_KIND, PROFILE_KIND, INVITE_KIND, ACCEPT_KIND, TOMBSTONE_KIND], since: Math.floor(Date.now() / 1000) - GOSSIP_SINCE },
-      { onevent: onGossipEvent }
+      { kinds: [INVITE_KIND], '#p': [state.pk], since: Math.floor(Date.now() / 1000) - GOSSIP_SINCE },
+      { onevent: onInviteEvent }
     );
 
-    // (Re)publish our own declarations + ensure local edges for friends.
+    // Ensure local edges for friends (drives the reachable view + hop budget).
     for (const f of state.friends) {
+      if (f === state.npub) continue; // never declare trust toward ourselves
       await storeEdge(state.npub, f, state.maxHops);
-      await publishTrust(f, state.maxHops);
     }
 
+    state.acceptedInvites = (await settings.get('acceptedInvites')) || [];
     state.p2p = new NostrP2P(state.skHex, {
       onConnect: (npub) => {
-        publishFilter();
-        // Proactive redundancy for direct friends as soon as they connect.
+        // If we accepted an invite from this peer, tell them now that we're
+        // connected so they can finalize their side too.
+        if (state.acceptedInvites.includes(npub)) {
+          state.acceptedInvites = state.acceptedInvites.filter(n => n !== npub);
+          settings.set('acceptedInvites', state.acceptedInvites);
+          sendSafe(npub, { type: 'invite_accept' });
+        }
+        // Push our profile + routing filter + trust web, then sync docs.
+        publishProfile();
+        sendFilter();
+        sendTrustDeclarations();
         sendSafe(npub, { type: 'backfill_request', since: 0 });
       },
       onDisconnect: () => {},
@@ -856,6 +889,14 @@ export async function startMesh() {
     });
     for (const f of state.friends) {
       try { state.p2p.connect(f); } catch { /* skip bad npub */ }
+    }
+    // Anyone we invited (pending or accepted) is known to us — accept their
+    // inbound handshake so the connection can establish without relays.
+    const allInvites = await getDB().then(db => db.getAll('invites'));
+    for (const inv of allInvites) {
+      if (inv.dir === 'out' && inv.npub !== state.npub) {
+        try { state.p2p.addPeer(inv.npub); } catch { /* skip bad npub */ }
+      }
     }
     // Multi-device sync: link to other devices sharing our identity key.
     if (state.syncDevices) {
@@ -951,7 +992,6 @@ export async function handleMeshRequest(request) {
       if (i >= 0) list.splice(i, 1);
       const db = await getDB();
       await db.delete('trust', `${state.npub}|${npub}`);
-      await publishTrust(npub, 0); // tombstone
       state.p2p.removePeer(npub);
       return { success: true, friends: state.friends };
     }
@@ -975,6 +1015,9 @@ export async function handleMeshRequest(request) {
         content: JSON.stringify({ invitee: npub, message: String(request.message || '').slice(0, 140) })
       }, state.sk);
       await Promise.allSettled(state.pool.publish(RELAYS, event));
+      // We accept their inbound handshake once they accept, so the connection
+      // can establish without any other relay traffic.
+      state.p2p.addPeer(npub);
       const db = await getDB();
       await db.put('invites', { id: `out|${npub}`, dir: 'out', npub, message: String(request.message || ''), ts: Date.now(), status: 'pending' });
       return { success: true };
@@ -985,13 +1028,12 @@ export async function handleMeshRequest(request) {
       const db = await getDB();
       if (request.accept) {
         await addTrusted(npub);
-        const event = finalizeEvent({
-          kind: ACCEPT_KIND,
-          created_at: Math.floor(Date.now() / 1000),
-          tags: [['p', nip19.decode(npub).data]],
-          content: JSON.stringify({ inviter: npub, invitee: state.npub })
-        }, state.sk);
-        await Promise.allSettled(state.pool.publish(RELAYS, event));
+        // Remember the acceptance so we can tell the inviter over the direct
+        // connection once it establishes (they finalize on `invite_accept`).
+        if (!state.acceptedInvites.includes(npub)) {
+          state.acceptedInvites.push(npub);
+          await settings.set('acceptedInvites', state.acceptedInvites);
+        }
       }
       await db.delete('invites', `in|${npub}`);
       return { success: true, friends: state.friends };
@@ -1010,9 +1052,9 @@ export async function handleMeshRequest(request) {
 
     case 'refreshCache': {
       // The local store changed under us (e.g. a delete) — rebuild the cached
-      // terms and re-gossip the routing filter.
+      // terms and re-share the routing filter over direct connections.
       state.cacheDirty = true;
-      await publishFilter();
+      await sendFilter();
       return { success: true };
     }
 
@@ -1020,18 +1062,15 @@ export async function handleMeshRequest(request) {
       const url = String(request.url || '');
       if (!url) return { success: false, error: 'Missing url' };
       const ts = Math.floor(Date.now() / 1000);
-      const event = finalizeEvent({
-        kind: TOMBSTONE_KIND,
-        created_at: ts,
-        tags: [],
-        content: JSON.stringify({ url, author: state.npub })
-      }, state.sk);
-      await Promise.allSettled(state.pool.publish(RELAYS, event));
-      // Fast path to connected friends, then apply locally.
-      for (const [npub] of state.p2p.connections) sendSafe(npub, { type: 'tombstone', url });
+      const sig = signTombstone(url, ts);
+      // Send a signed delete to connected peers (they forward it onward), then
+      // apply locally.
+      for (const [npub] of state.p2p.connections) {
+        sendSafe(npub, { type: 'tombstone', url, authorNpub: state.npub, ts, sig });
+      }
       await applyTombstone(state.npub, url, ts);
       state.cacheDirty = true;
-      await publishFilter();
+      await sendFilter();
       return { success: true };
     }
 

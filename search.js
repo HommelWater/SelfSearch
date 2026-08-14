@@ -550,7 +550,8 @@ async function loadProfile() {
 }
 
 function renderSyncStatus(peers) {
-  const linked = peers.connected.includes(peers.npub);
+  const connected = peers.connected || [];
+  const linked = connected.includes(peers.npub);
   syncStatus.textContent = peers.syncDevices
     ? (linked ? 'Device sync on — linked to your other devices.' : 'Device sync on — other devices will link when online.')
     : 'Device sync off.';

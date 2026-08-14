@@ -121,3 +121,33 @@ test('allowSelf links to our own npub but skips our own signals', async () => {
   assert.equal(inst.sessions.size, 1, 'own signal must not create a second session');
   inst.close();
 });
+
+test('allowSelf accepts our own npub as a peer and answers a device handshake', async () => {
+  const sk = realDeps.bytesToHex(realDeps.generateSecretKey());
+  const pk = realDeps.getPublicKey(realDeps.hexToBytes(sk));
+  const npub = realDeps.nip19.npubEncode(pk);
+
+  const inst = new NostrP2P(sk, { allowSelf: true, peers: new Set() });
+  const pool = pools[pools.length - 1];
+
+  // The mesh links device sync by adding our own npub as a known peer.
+  inst.addPeer(npub);
+  assert.equal(inst.peers.has(npub), true, 'own npub accepted as a peer with allowSelf');
+  const publishedBefore = pool.published.length; // maintenance may already offer
+
+  // The other device (same identity key) offers a handshake addressed to us.
+  const ck = realDeps.nip44.getConversationKey(realDeps.hexToBytes(sk), pk);
+  const offerTs = Math.floor(Date.now() / 1000);
+  const content = realDeps.nip44.encrypt(
+    JSON.stringify({ type: 'offer', ots: offerTs, sdp: { type: 'offer', sdp: 'device-sdp' } }),
+    ck
+  );
+  const offerEvent = { id: 'device-offer', sig: 'y', kind: 25000, created_at: offerTs, tags: [['p', pk]], pubkey: pk, content };
+
+  await inst.handleSignal(offerEvent);
+  assert.equal(inst.sessions.size, 1, 'device offer must not be dropped');
+  const s = [...inst.sessions.values()][0];
+  assert.equal(s.initiator, false, 'we answer the other device handshake');
+  assert.ok(pool.published.length > publishedBefore, 'an answer is published for the device link');
+  inst.close();
+});
