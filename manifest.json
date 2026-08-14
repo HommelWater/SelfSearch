@@ -23,7 +23,8 @@
     "keyword": "ss"
   },
   "icons": {
-    "96": "icon96.png"
+    "96": "icon96.png",
+    "128": "icon128pad.png"
   },
   "browser_specific_settings": {
     "gecko": {
