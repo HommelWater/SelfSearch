@@ -10,7 +10,6 @@ let dbPromise = null;
 //   docCache    keyPath id         — peers' docs (id = authorNpub + '|' + url)
 //   index       keyPath term       — inverted index term -> { term, urls: [url...] }
 //   queryCache  keyPath query      — rolling LRU query -> results
-//   images      keyPath hash       — screenshots, never shared
 //   trust       keyPath id         — trust edges (id = truster + '|' + trusted)
 //   profiles    keyPath npub       — gossiped peer profiles (name, avatar, bio)
 //   invites     keyPath id         — friend invites (id = in|npub / out|npub)
@@ -36,9 +35,6 @@ export function getDB() {
         }
         if (!db.objectStoreNames.contains('queryCache')) {
           db.createObjectStore('queryCache', { keyPath: 'query' });
-        }
-        if (!db.objectStoreNames.contains('images')) {
-          db.createObjectStore('images', { keyPath: 'hash' });
         }
         if (!db.objectStoreNames.contains('trust')) {
           db.createObjectStore('trust', { keyPath: 'id' });

@@ -38,8 +38,8 @@ Load the extension unpacked:
    nodes connect over a WebRTC mesh and build redundancy by caching each
    other's pages.
 
-The extension stores everything in IndexedDB on your machine. Screenshots are
-kept locally and never shared.
+The extension stores everything in IndexedDB on your machine. Only text
+metadata is ever shared, and only with peers you add.
 
 ## Development
 

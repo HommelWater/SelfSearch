@@ -21,7 +21,6 @@ over Nostr relays. Extraction is fully local.
 
 ## Non-goals
 
-- No image/screenshot sharing between peers (captures stay on the capturing node).
 - No open/public network by default (trust web only).
 - No streaming or real-time updates of the index.
 
@@ -94,7 +93,7 @@ Trust is transitive, hop-limited.
 
 | Store      | Key                | Content |
 |------------|--------------------|---------|
-| `docs`     | `url`              | Your own indexed pages: `{url, title, description, direct_keywords, related_keywords, timestamp}` + `image_hash` (image stays local) |
+| `docs`     | `url`              | Your own indexed pages: `{url, title, description, direct_keywords, related_keywords, timestamp}` |
 | `docCache` | `id` = `authorNpub\|url` | Copies of peers' docs: same fields + `authorNpub` + `sig` + `timestamp` (author's) + `addedAt` (LRU) + `terms` |
 | `queryCache` | normalized query | `{query, results, ts}` — rolling LRU |
 | `index`    | term → `[url...]`  | Inverted index over `docs` (and optionally `docCache`) for local search |
@@ -103,11 +102,9 @@ Trust is transitive, hop-limited.
 | `invites`  | `in\|npub` / `out\|npub` | Friend invites (pending/outgoing) |
 | `tombstones` | `authorNpub\|url` | Signed deletes `{url, authorNpub, ts}` |
 | `manifest` | `url`              | Content hash of each owned doc (drives repair + device sync) |
-| `images`   | `hash`             | Screenshots, stored locally, never shared |
 | `settings` | key                | nostr secret key, friends, `maxHops`, `syncDevices`, cache caps, `acceptedInvites`, profile |
 
-Screenshots/images are **never** shared; they live only under the capturing
-node's own storage.
+Only text metadata is stored or shared; no screenshots are taken.
 
 ## Bloom filters (routing)
 
@@ -305,6 +302,9 @@ diameter) without overloading anyone.
 - Text metadata only — no images, no full browsing raw data beyond the
   extracted fields.
 - Secret keys stay in the user's extension storage.
+- **IP disclosure:** a direct WebRTC connection lets each peer observe the
+  other's IP address (and so approximate location). The UI and privacy policy
+  warn users before they add a friend.
 - Result attribution keeps the web-of-trust accountable (per-node rate/penalty
   is a future feature).
 

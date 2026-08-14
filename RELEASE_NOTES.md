@@ -1,0 +1,68 @@
+SelfSearch 1.2.1 - Release Notes
+
+Privacy
+
+- No screenshots are taken, ever. The screenshot capture code has been removed entirely; indexing reads the page's text only.
+- Fewer permissions. The 'tabs' permission is gone (it existed only for screenshots); the extension now asks for the minimum needed to index and connect.
+- IP address disclosure is now disclosed up front. Connecting to a peer over WebRTC shows that peer your IP address, which reveals your approximate location. A notice now appears on the Peers page before you add a friend, and the privacy policy explains the implication. Only add people you trust.
+
+What changed
+
+- Removed screenshot capture: no image is captured, stored, or hashed when you index a page.
+- Dropped the images IndexedDB store and the now-unused image helpers.
+- Dropped the tabs permission from the manifest.
+- Added the IP-address/location disclosure to the Peers tab UI, the privacy policy, and the design notes.
+
+Development
+
+- Tests: node test/run.mjs (32 tests). No npm, no build step.
+
+---
+
+SelfSearch 1.2.0 - Release Notes
+
+SelfSearch has been rewritten. It is now a serverless peer-to-peer extension: the server is gone and the entire search engine runs inside the browser, with no backend, no accounts, and no cloud.
+
+What changed
+
+- Fully local engine. Click the icon to index a page; titles, keywords, and descriptions are extracted locally from the page's own text. No cloud, no API keys, no host permissions.
+- No server to install. Load the extension, index pages, search. No setup script, no domain, no login.
+
+Search across a trusted network (opt-in)
+
+- Nostr identity. Your keypair is your address (npub); the secret key stays in your extension storage.
+- Friends and invites. Add friends by npub, or send a friend invite that both sides accept automatically.
+- WebRTC mesh. Peers connect directly over WebRTC; relays are used only for connection signaling and friend invitations.
+- Bloom-filter routing. Queries fan out over a hop-limited web of trust (default 2 hops), so you can find content in your friends' networks.
+- Streaming results. Answers appear as they arrive, attributed to the author, not whoever relayed them.
+
+Trust and integrity
+
+- Signed docs. Every doc served to peers carries a per-doc author signature. Caches verify before storing; unsigned or tampered docs are dropped, and forged answers are never shown.
+- Signed tombstones. Deleting a page publishes a signed delete that propagates through the mesh, so cached copies of deleted pages disappear.
+- Self-healing repair. A manifest of your docs detects loss or corruption and restores authentic copies from peers.
+- Last-write-wins. Doc caches and profile sync never let an older copy roll back a newer one.
+
+Redundancy
+
+- docCache. Peers' docs are cached on-demand from query answers and proactively backfilled from direct friends, so content survives a peer going offline and stays searchable.
+- Peers feed. See who your peers are and what they have recently indexed.
+
+Multi-device sync
+
+- Enter the same nsec on another device to make it the same identity; devices sharing a key link automatically and replicate your index (last-write-wins), so all your devices converge.
+- Profile updates (name/avatar/bio) sync across your devices too.
+
+Quality of life
+
+- Omnibox search (ss <query>), Alt+Shift+S, or the search page hub with Search / Peers / Profile tabs.
+- Privacy and bandwidth. Text metadata only. No screenshots are taken. Relays only carry signaling and invites.
+
+What didn't change
+
+- Text-only metadata; no screenshots are taken.
+- A clear privacy policy (see PRIVACY.txt).
+
+Development
+
+- The project is dependency-free: pure ES modules with relative imports. Tests run with Node's built-in runner - node test/run.mjs (30 tests). No npm, no build step, nothing to install.

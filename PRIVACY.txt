@@ -6,7 +6,7 @@ Overview
 This Privacy Policy describes how SelfSearch ("we", "our", or "the extension") collects, uses, and handles user data. SelfSearch is a client-only search engine: it captures pages you visit, extracts keywords, stores them locally on your device, and lets you search them — including across a peer-to-peer network you control.
 Information We Collect
 
-Indexing: When you click "Index this page", the extension reads the current page's text content and (optionally) captures a screenshot. Keywords, a title, and a description are extracted locally on your device from the page's own text. You may also add your own keywords. The extracted metadata, together with the page URL and timestamp, is stored locally on your device in the extension's IndexedDB. The screenshot, if captured, is also stored locally on your device.
+Indexing: When you click "Index this page", the extension reads the current page's text content. Keywords, a title, and a description are extracted locally on your device from the page's own text. You may also add your own keywords. The extracted metadata, together with the page URL and timestamp, is stored locally on your device in the extension's IndexedDB.
 
 We do not operate any servers and do not collect, store, or process your data. All data stays on your device unless you explicitly share it as described below.
 How Your Data Is Used
@@ -20,7 +20,9 @@ The extension can connect to other users you explicitly trust and search across 
     Text metadata (URL, title, description, keywords, timestamp) of pages in your index.
     Your profile (name, avatar, bio) if you set one.
 
-Screenshots are never shared with peers. Peer-to-peer sharing is opt-in and only involves peers you explicitly add. Relays are used only to connect peers (WebRTC signaling) and to deliver friend invitations; your profile, trust declarations, and index data are exchanged directly with peers you have added over encrypted data channels.
+No screenshots are taken. Peer-to-peer sharing is opt-in and only involves peers you explicitly add. Relays are used only to connect peers (WebRTC signaling) and to deliver friend invitations; your profile, trust declarations, and index data are exchanged directly with peers you have added over encrypted data channels.
+
+Connection implies disclosure of your IP address: when you connect to a peer, that peer sees the IP address you are connecting from, which can reveal your approximate location (region or city level). It works both ways — you also see your peers' IP addresses. Only add people you trust, and understand that they (and any network provider between you) can observe that you are online and roughly where you are while connected.
 Information Sharing and Transfer
 
 We do not sell, share, or transfer your data to third parties. The only transfers occur when you explicitly enable peer-to-peer search: text metadata and queries are exchanged with peers you have added.

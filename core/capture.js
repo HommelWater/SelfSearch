@@ -1,4 +1,4 @@
-import { extractFromDom, dataUrlToBlob, sha256Hex } from './extract.js';
+import { extractFromDom } from './extract.js';
 import { saveDoc } from './search.js';
 
 export function browserApi() {
@@ -22,8 +22,8 @@ function readPageInfo() {
 }
 
 // Capture the current tab: read the page DOM, extract keywords locally, merge
-// user keywords, store the doc. `screenshot: false` skips the (heavy) image.
-export async function captureAndIndex(tab, { keywords = '', screenshot = true } = {}) {
+// user keywords, store the doc. Text metadata only — no screenshots.
+export async function captureAndIndex(tab, { keywords = '' } = {}) {
   const api = browserApi();
 
   // Page text (activeTab grants us the current tab while the popup is open).
@@ -41,19 +41,6 @@ export async function captureAndIndex(tab, { keywords = '', screenshot = true } 
   const url = (page && page.url) || tab.url || '';
   const title = (page && page.title) || tab.title || '';
 
-  // Screenshot — stored locally (never shared). Skipped for auto-indexing.
-  let blob = null;
-  let imageHash = '';
-  if (screenshot) {
-    try {
-      const dataUrl = await api.tabs.captureVisibleTab(tab.windowId, { format: 'jpeg', quality: 80 });
-      blob = dataUrlToBlob(dataUrl);
-      imageHash = await sha256Hex(blob);
-    } catch (err) {
-      console.warn('[capture] screenshot failed', err);
-    }
-  }
-
   // Extract keywords locally from the page DOM (fast, always available).
   const extracted = extractFromDom({ title, ...(page || {}) });
 
@@ -68,10 +55,9 @@ export async function captureAndIndex(tab, { keywords = '', screenshot = true } 
     description: String(extracted.description || '').trim(),
     direct_keywords: [...new Set(direct)].slice(0, 30).join(' '),
     related_keywords: [...new Set(related)].slice(0, 30).join(' '),
-    timestamp: Math.floor(Date.now() / 1000),
-    image_hash: imageHash
+    timestamp: Math.floor(Date.now() / 1000)
   };
 
-  await saveDoc(doc, blob);
-  return { ...doc, visionUsed: false };
+  await saveDoc(doc);
+  return doc;
 }

@@ -53,10 +53,10 @@ async function indexTerms(indexStore, doc) {
 }
 
 // Upsert a doc (replaces existing entry for the same url) and keep the
-// inverted index in sync. imageBlob (optional) is stored locally.
-export async function saveDoc(doc, imageBlob) {
+// inverted index in sync.
+export async function saveDoc(doc) {
   const db = await getDB();
-  const tx = db.transaction(['docs', 'index', 'images'], 'readwrite');
+  const tx = db.transaction(['docs', 'index'], 'readwrite');
   const docsStore = tx.objectStore('docs');
   const indexStore = tx.objectStore('index');
 
@@ -65,9 +65,6 @@ export async function saveDoc(doc, imageBlob) {
   await docsStore.put(doc);
   await indexTerms(indexStore, doc);
 
-  if (imageBlob && doc.image_hash) {
-    await tx.objectStore('images').put({ hash: doc.image_hash, blob: imageBlob });
-  }
   await tx.done;
   await db.put('manifest', { url: doc.url, hash: await docHash(doc), ts: Date.now() });
   return doc;
@@ -75,7 +72,7 @@ export async function saveDoc(doc, imageBlob) {
 
 export async function deleteDoc(url) {
   const db = await getDB();
-  const tx = db.transaction(['docs', 'index', 'images'], 'readwrite');
+  const tx = db.transaction(['docs', 'index'], 'readwrite');
   const docsStore = tx.objectStore('docs');
   const indexStore = tx.objectStore('index');
 
@@ -85,7 +82,6 @@ export async function deleteDoc(url) {
   if (doc) {
     await unindexTerms(indexStore, doc);
     await docsStore.delete(url);
-    if (doc.image_hash) await tx.objectStore('images').delete(doc.image_hash);
     removed = true;
     wasOwned = true;
   }
