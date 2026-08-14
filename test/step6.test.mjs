@@ -64,7 +64,11 @@ test('setProfile stores locally and shares it over the direct channel', async ()
 
   const resp = await mesh.handleMeshRequest({ p2p: true, op: 'setProfile', name: 'Alice', avatar: '🌻', bio: 'hello from alice' });
   assert.equal(resp.success, true);
-  assert.deepEqual(await settings.get('profile'), { name: 'Alice', avatar: '🌻', bio: 'hello from alice' });
+  const saved = await settings.get('profile');
+  assert.equal(saved.name, 'Alice');
+  assert.equal(saved.avatar, '🌻');
+  assert.equal(saved.bio, 'hello from alice');
+  assert.ok(saved.ts > 0, 'profile stamped with a timestamp for last-write-wins');
 
   const sent = sentLog.find(e => e.to === FRIEND && e.msg.type === 'profile');
   assert.ok(sent, 'profile should be sent to the connected friend');

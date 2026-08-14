@@ -50,7 +50,7 @@ mock.module(new URL('../lib/nostr-deps.js', import.meta.url), {
   }
 });
 
-const { getDB } = await import('../core/db.js');
+const { getDB, settings } = await import('../core/db.js');
 const mesh = await import('../core/mesh.js');
 const { signWireDoc } = await import('./helpers.mjs');
 
@@ -110,6 +110,30 @@ test('device sync is last-write-wins by timestamp', async () => {
   lastP2P.deliverFrom(NPUB, { type: 'backfill', since: 0, docs: [newer] });
   await new Promise(r => setTimeout(r, 20));
   assert.equal((await db.get('docs', 'https://sync.example/1')).title, 'From Device A (edited)', 'newer copy applied');
+});
+
+test('a profile from a same-identity device becomes our own profile', async () => {
+  sentLog.length = 0;
+  const ts = Math.floor(Date.now() / 1000);
+  lastP2P.deliverFrom(NPUB, { type: 'profile', ts, profile: { name: 'Alice', avatar: '🌻', bio: 'one identity, two devices' } });
+  await new Promise(r => setTimeout(r, 20));
+
+  const own = await settings.get('profile');
+  assert.equal(own.name, 'Alice', 'adopted the device profile as our own');
+  assert.equal(own.avatar, '🌻');
+  assert.equal(own.bio, 'one identity, two devices');
+
+  // It should be re-shared so the whole mesh converges on it.
+  assert.ok(sentLog.some(e => e.msg.type === 'profile' && e.msg.profile.name === 'Alice'), 'adopted profile re-published');
+});
+
+test('an older device profile never overwrites our newer one (last-write-wins)', async () => {
+  const ts = Math.floor(Date.now() / 1000);
+  await settings.set('profile', { name: 'Bob', avatar: '😀', bio: 'newer local', ts: ts + 1000 });
+
+  lastP2P.deliverFrom(NPUB, { type: 'profile', ts, profile: { name: 'Stale', avatar: '', bio: 'old' } });
+  await new Promise(r => setTimeout(r, 20));
+  assert.equal((await settings.get('profile')).name, 'Bob', 'stale device profile ignored');
 });
 
 mesh.stopMesh();

@@ -301,13 +301,32 @@ async function publishProfile() {
   if (!state) return;
   const profile = (await settings.get('profile')) || {};
   if (!profile.name && !profile.avatar && !profile.bio) return;
-  const msg = { type: 'profile', profile: { name: profile.name || '', avatar: profile.avatar || '', bio: profile.bio || '' } };
+  const ts = profile.ts || 0;
+  const msg = { type: 'profile', ts, profile: { name: profile.name || '', avatar: profile.avatar || '', bio: profile.bio || '' } };
   for (const [npub] of state.p2p.connections) sendSafe(npub, msg);
 }
 
 async function storePeerProfile(npub, profile, ts) {
   const db = await getDB();
   await db.put('profiles', { npub, name: profile.name || '', avatar: profile.avatar || '', bio: profile.bio || '', ts });
+}
+
+// A profile arrived over the data channel. Remember it for the peers feed;
+// if it came from a device sharing our identity, adopt it as our own profile
+// too (last-write-wins by ts) so every device of the same identity converges
+// on one profile, then re-share it across the mesh.
+async function handleProfileMessage(npub, msg) {
+  const profile = msg.profile;
+  const ts = msg.ts || Math.floor(Date.now() / 1000);
+  await storePeerProfile(npub, profile, ts);
+  if (npub !== state.npub) return;
+  const local = (await settings.get('profile')) || {};
+  const localTs = local.ts || 0;
+  if (ts > localTs && (profile.name || profile.avatar || profile.bio)) {
+    await settings.set('profile', { name: profile.name || '', avatar: profile.avatar || '', bio: profile.bio || '', ts });
+    log(`[sync] adopted profile from device`);
+    publishProfile();
+  }
 }
 
 // Share our trust declarations with connected peers over the data channel, so
@@ -663,7 +682,7 @@ function handlePeerMessage(npub, msg) {
     handleTombstone(npub, msg).catch(() => {});
   } else if (msg.type === 'profile') {
     if (!msg.profile || typeof msg.profile !== 'object') return;
-    storePeerProfile(npub, msg.profile, Math.floor(Date.now() / 1000)).catch(() => {});
+    handleProfileMessage(npub, msg).catch(() => {});
   } else if (msg.type === 'filter') {
     const { bloom, termCount, seq } = msg;
     if (!bloom || !Number.isFinite(termCount) || !Number.isFinite(seq)) return;
@@ -1098,7 +1117,8 @@ export async function handleMeshRequest(request) {
       const profile = {
         name: String(request.name || '').slice(0, 40),
         avatar: String(request.avatar || '').slice(0, 4),
-        bio: String(request.bio || '').slice(0, 200)
+        bio: String(request.bio || '').slice(0, 200),
+        ts: Math.floor(Date.now() / 1000)
       };
       await settings.set('profile', profile);
       await publishProfile();
