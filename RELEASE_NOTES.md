@@ -1,3 +1,9 @@
+SelfSearch 1.2.3 - Release Notes
+
+- Removed the unused 'storage' permission from the manifest. All data was already kept in IndexedDB, so nothing changes functionally. This resolves a Chrome Web Store policy violation ("requesting but not using a permission").
+
+---
+
 SelfSearch 1.2.1 - Release Notes
 
 Privacy

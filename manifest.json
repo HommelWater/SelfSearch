@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "SelfSearch",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "description": "Personal P2P search engine. Index pages you visit, search them locally, and share with a trusted network.",
-  "permissions": ["activeTab", "storage", "offscreen", "alarms", "scripting"],
+  "permissions": ["activeTab", "offscreen", "alarms", "scripting"],
   "host_permissions": [],
   "commands": {
     "open-search": {

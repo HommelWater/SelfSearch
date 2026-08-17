@@ -1,6 +1,6 @@
 {
   "name": "selfsearch",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "private": true,
   "description": "Serverless peer-to-peer personal search engine (browser extension)",
   "type": "module",
