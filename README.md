@@ -20,6 +20,11 @@ hop-limited web of trust.
 
 ## Install
 
+Load via chrome/firefox store:
+
+- **Chrome:** https://chromewebstore.google.com/detail/selfsearch/pfehkhjjhofphpnjmbeijilfcamiodfh
+- **Firefox:** https://addons.mozilla.org/en-US/firefox/addon/selfsearch-indexer/
+
 Load the extension unpacked:
 
 - **Chrome:** `chrome://extensions` → enable *Developer mode* → *Load unpacked* → select this folder.
