@@ -8,6 +8,7 @@ const queryInput = document.getElementById('query');
 const goBtn = document.getElementById('go');
 const metaDiv = document.getElementById('meta');
 const resultsDiv = document.getElementById('results');
+const autoIndexCheckbox = document.getElementById('autoIndexCheckbox');
 
 // Set while a network search is in flight; used to filter streaming partials.
 let currentQueryId = null;
@@ -159,6 +160,20 @@ api.runtime.onMessage.addListener((msg) => {
 
 goBtn.addEventListener('click', run);
 queryInput.addEventListener('keydown', e => { if (e.key === 'Enter') run(); });
+
+// Auto-index toggle (persisted; the background respects it for autoIndex).
+async function loadAutoIndex() {
+  try {
+    const resp = await api.runtime.sendMessage({ action: 'getSettings' });
+    if (resp && resp.success) autoIndexCheckbox.checked = resp.settings.autoIndex !== false;
+  } catch { /* background may be unreachable yet */ }
+}
+autoIndexCheckbox.addEventListener('change', async () => {
+  try {
+    await api.runtime.sendMessage({ action: 'saveSettings', values: { autoIndex: autoIndexCheckbox.checked } });
+  } catch { /* ignore */ }
+});
+loadAutoIndex();
 
 // Support ?q= from the omnibox / external opens.
 const urlQuery = new URLSearchParams(location.search).get('q');

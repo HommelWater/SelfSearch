@@ -15,7 +15,7 @@ const files = readdirSync(testDir)
 
 const { status } = spawnSync(
   process.execPath,
-  ['--test', '--experimental-test-module-mocks', '--test-force-exit', ...files],
+  ['--test', '--test-force-exit', ...files],
   { stdio: 'inherit' }
 );
 process.exit(status ?? 1);

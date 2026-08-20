@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { test, mock } from 'node:test';
+import { test } from 'node:test';
 import './vendor/fake-indexeddb/auto.mjs';
 
 globalThis.localStorage = { getItem: () => null, setItem: () => {}, removeItem: () => {} };
@@ -33,25 +33,10 @@ class FakeNostrP2P {
   deliverFrom(npub, msg) { this.options.onMessage(npub, msg); }
 }
 
-mock.module(new URL('../lib/nostr-p2p.js', import.meta.url), {
-  exports: { NostrP2P: FakeNostrP2P }
-});
-mock.module(new URL('../lib/nostr-deps.js', import.meta.url), {
-  exports: {
-    SimplePool: FakeSimplePool,
-    finalizeEvent: realDeps.finalizeEvent,
-    generateSecretKey: realDeps.generateSecretKey,
-    getPublicKey: realDeps.getPublicKey,
-    nip19: realDeps.nip19,
-    schnorr: realDeps.schnorr,
-    sha256: realDeps.sha256,
-    bytesToHex: realDeps.bytesToHex,
-    hexToBytes: realDeps.hexToBytes
-  }
-});
-
 const { getDB, settings } = await import('../core/db.js');
 const mesh = await import('../core/mesh.js');
+
+mesh.setMeshDeps({ NostrP2P: FakeNostrP2P, SimplePool: FakeSimplePool, relays: [] });
 
 const skFriend = realDeps.generateSecretKey();
 const pkFriend = realDeps.getPublicKey(skFriend);
@@ -96,7 +81,7 @@ test('invite_accept over the direct channel finalizes our side', async () => {
   await db.put('invites', { id: `out|${FRIEND}`, dir: 'out', npub: FRIEND, message: '', ts: Date.now(), status: 'pending' });
 
   lastP2P.deliverFrom(FRIEND, { type: 'invite_accept' });
-  await new Promise(r => setTimeout(r, 20));
+  await mesh.flushMesh();
 
   const after = await mesh.handleMeshRequest({ p2p: true, op: 'status' });
   assert.ok(after.status.friends.includes(FRIEND), 'invitee added as a friend after accepting');

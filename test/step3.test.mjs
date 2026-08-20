@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { test, mock } from 'node:test';
+import { test } from 'node:test';
 import './vendor/fake-indexeddb/auto.mjs';
 
 globalThis.localStorage = {
@@ -60,26 +60,11 @@ class FakeNostrP2P {
   }
 }
 
-mock.module(new URL('../lib/nostr-p2p.js', import.meta.url), {
-  exports: { NostrP2P: FakeNostrP2P }
-});
-mock.module(new URL('../lib/nostr-deps.js', import.meta.url), {
-  exports: {
-    SimplePool: FakeSimplePool,
-    finalizeEvent: realDeps.finalizeEvent,
-    generateSecretKey: realDeps.generateSecretKey,
-    getPublicKey: realDeps.getPublicKey,
-    nip19: realDeps.nip19,
-    schnorr: realDeps.schnorr,
-    sha256: realDeps.sha256,
-    bytesToHex: realDeps.bytesToHex,
-    hexToBytes: realDeps.hexToBytes
-  }
-});
-
 const { saveDoc } = await import('../core/search.js');
 const mesh = await import('../core/mesh.js');
 const { signWireDoc } = await import('./helpers.mjs');
+
+mesh.setMeshDeps({ NostrP2P: FakeNostrP2P, SimplePool: FakeSimplePool, relays: [] });
 
 const skFriend = realDeps.generateSecretKey();
 const FRIEND_NPUB = realDeps.nip19.npubEncode(realDeps.getPublicKey(skFriend));
@@ -148,7 +133,7 @@ test('mesh responds to an incoming query with local results', async () => {
     path: [OTHER_NPUB],
     limit: 10
   });
-  await new Promise(r => setTimeout(r, 20));
+  await mesh.flushMesh();
   const answer = sentLog.find(e => e.msg.type === 'query_answer');
   assert.ok(answer, 'we should answer inbound queries');
   assert.equal(answer.msg.queryId, 'q_inbound_1');

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { test, mock } from 'node:test';
+import { test } from 'node:test';
 import './vendor/fake-indexeddb/auto.mjs';
 
 globalThis.localStorage = { getItem: () => null, setItem: () => {}, removeItem: () => {} };
@@ -33,26 +33,11 @@ class FakeNostrP2P {
 }
 const sentLog = [];
 
-mock.module(new URL('../lib/nostr-p2p.js', import.meta.url), {
-  exports: { NostrP2P: FakeNostrP2P }
-});
-mock.module(new URL('../lib/nostr-deps.js', import.meta.url), {
-  exports: {
-    SimplePool: FakeSimplePool,
-    finalizeEvent: realDeps.finalizeEvent,
-    generateSecretKey: realDeps.generateSecretKey,
-    getPublicKey: realDeps.getPublicKey,
-    nip19: realDeps.nip19,
-    schnorr: realDeps.schnorr,
-    sha256: realDeps.sha256,
-    bytesToHex: realDeps.bytesToHex,
-    hexToBytes: realDeps.hexToBytes
-  }
-});
-
 const { getDB, settings } = await import('../core/db.js');
 const mesh = await import('../core/mesh.js');
 const { signWireDoc } = await import('./helpers.mjs');
+
+mesh.setMeshDeps({ NostrP2P: FakeNostrP2P, SimplePool: FakeSimplePool, relays: [] });
 
 const skFriend = realDeps.generateSecretKey();
 const FRIEND = realDeps.nip19.npubEncode(realDeps.getPublicKey(skFriend));
@@ -87,7 +72,7 @@ test('getPeers returns profiles and recently-indexed peer docs', async () => {
   // A peer profile we heard about via gossip.
   const db = await getDB();
   await db.put('profiles', { npub: FRIEND, name: 'Alice', avatar: '🌻', bio: '', ts: now });
-  await new Promise(r => setTimeout(r, 20));
+  await mesh.flushMesh();
 
   const resp = await mesh.handleMeshRequest({ p2p: true, op: 'getPeers' });
   assert.equal(resp.success, true);

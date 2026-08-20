@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { test, mock } from 'node:test';
+import { test } from 'node:test';
 import './vendor/fake-indexeddb/auto.mjs';
 
 globalThis.localStorage = { getItem: () => null, setItem: () => {}, removeItem: () => {} };
@@ -33,27 +33,12 @@ class FakeNostrP2P {
   deliverFrom(npub, msg) { this.options.onMessage(npub, msg); }
 }
 
-mock.module(new URL('../lib/nostr-p2p.js', import.meta.url), {
-  exports: { NostrP2P: FakeNostrP2P }
-});
-mock.module(new URL('../lib/nostr-deps.js', import.meta.url), {
-  exports: {
-    SimplePool: FakeSimplePool,
-    finalizeEvent: realDeps.finalizeEvent,
-    generateSecretKey: realDeps.generateSecretKey,
-    getPublicKey: realDeps.getPublicKey,
-    nip19: realDeps.nip19,
-    schnorr: realDeps.schnorr,
-    sha256: realDeps.sha256,
-    bytesToHex: realDeps.bytesToHex,
-    hexToBytes: realDeps.hexToBytes
-  }
-});
-
 const { saveDoc } = await import('../core/search.js');
 const { getDB } = await import('../core/db.js');
 const mesh = await import('../core/mesh.js');
 const { canonicalDoc, signWireDoc, signTombstone } = await import('./helpers.mjs');
+
+mesh.setMeshDeps({ NostrP2P: FakeNostrP2P, SimplePool: FakeSimplePool, relays: [] });
 
 const skFriend = realDeps.generateSecretKey();
 const FRIEND = realDeps.nip19.npubEncode(realDeps.getPublicKey(skFriend));
@@ -72,7 +57,7 @@ test('docs we serve are signed and verify against our pubkey', async () => {
   });
   sentLog.length = 0;
   lastP2P.deliverFrom(FRIEND, { type: 'backfill_request', since: 0 });
-  await new Promise(r => setTimeout(r, 20));
+  await mesh.flushMesh();
 
   const backfill = sentLog.find(e => e.msg.type === 'backfill');
   assert.ok(backfill, 'we should answer a backfill request');
@@ -94,7 +79,7 @@ test('unsigned or tampered docs are not cached', async () => {
     type: 'backfill', since: 0,
     docs: [{ url: 'https://bad.example/1', title: 'Unsigned', description: '', direct_keywords: 'x', related_keywords: '', timestamp: now, authorNpub: FRIEND }]
   });
-  await new Promise(r => setTimeout(r, 20));
+  await mesh.flushMesh();
   assert.equal(await cached('https://bad.example/1'), undefined, 'unsigned doc must be dropped');
 
   // Tampered: signed, then content changed after signing.
@@ -104,7 +89,7 @@ test('unsigned or tampered docs are not cached', async () => {
   });
   const tampered = { ...signed, title: 'TAMPERED' };
   lastP2P.deliverFrom(FRIEND, { type: 'backfill', since: 0, docs: [tampered] });
-  await new Promise(r => setTimeout(r, 20));
+  await mesh.flushMesh();
   assert.equal(await cached('https://bad.example/2'), undefined, 'tampered doc must be dropped');
 });
 
@@ -116,17 +101,17 @@ test('tombstones remove cached copies and block re-adds unless the doc is newer'
     direct_keywords: 'doomed', related_keywords: '', timestamp: now
   });
   lastP2P.deliverFrom(FRIEND, { type: 'backfill', since: 0, docs: [doc] });
-  await new Promise(r => setTimeout(r, 20));
+  await mesh.flushMesh();
   assert.ok(await cached('https://gone.example/1'), 'doc cached initially');
 
   // The author deletes the page, telling us over the direct channel.
   lastP2P.deliverFrom(FRIEND, signTombstone(realDeps, skFriend, FRIEND, 'https://gone.example/1', Math.floor(Date.now() / 1000)));
-  await new Promise(r => setTimeout(r, 20));
+  await mesh.flushMesh();
   assert.equal(await cached('https://gone.example/1'), undefined, 'cached copy removed by tombstone');
 
   // Re-caching the OLD version is blocked…
   lastP2P.deliverFrom(FRIEND, { type: 'backfill', since: 0, docs: [doc] });
-  await new Promise(r => setTimeout(r, 20));
+  await mesh.flushMesh();
   assert.equal(await cached('https://gone.example/1'), undefined, 'old version stays hidden after delete');
 
   // …but the author re-adding the page with a NEWER timestamp wins.
@@ -135,7 +120,7 @@ test('tombstones remove cached copies and block re-adds unless the doc is newer'
     direct_keywords: 'doomed', related_keywords: '', timestamp: now + 200
   });
   lastP2P.deliverFrom(FRIEND, { type: 'backfill', since: 0, docs: [reAdded] });
-  await new Promise(r => setTimeout(r, 20));
+  await mesh.flushMesh();
   const fresh = await cached('https://gone.example/1');
   assert.ok(fresh, 'newer version re-cached after delete');
   assert.equal(fresh.title, 'Doomed (v2)');
@@ -162,14 +147,14 @@ test('an older cached copy never overwrites a newer one (last-write-wins)', asyn
     description: 'lww newer', direct_keywords: 'lww', related_keywords: '', timestamp: now
   });
   lastP2P.deliverFrom(FRIEND, { type: 'backfill', since: 0, docs: [newer] });
-  await new Promise(r => setTimeout(r, 20));
+  await mesh.flushMesh();
 
   const older = signWireDoc(realDeps, skFriend, {
     authorNpub: FRIEND, url: 'https://lww.example/1', title: 'Older (stale)',
     description: 'lww older', direct_keywords: 'lww', related_keywords: '', timestamp: now - 1000
   });
   lastP2P.deliverFrom(FRIEND, { type: 'backfill', since: 0, docs: [older] });
-  await new Promise(r => setTimeout(r, 20));
+  await mesh.flushMesh();
 
   const c = await cached('https://lww.example/1');
   assert.ok(c, 'doc cached');
@@ -206,7 +191,7 @@ test('trust declarations propagate over the data channel into the trust graph', 
   const OTHER = realDeps.nip19.npubEncode(realDeps.getPublicKey(skOther));
   // Our friend trusts someone we don't know — they tell us over the channel.
   lastP2P.deliverFrom(FRIEND, { type: 'trust_declaration', truster: FRIEND, trusted: OTHER, maxHops: 2 });
-  await new Promise(r => setTimeout(r, 20));
+  await mesh.flushMesh();
 
   const peers = await mesh.handleMeshRequest({ p2p: true, op: 'getPeers' });
   const reach = peers.peers.reachable.find(r => r.npub === OTHER);
@@ -221,7 +206,7 @@ test('a forged trust declaration (not self-signed) is ignored', async () => {
   const OTHER = realDeps.nip19.npubEncode(realDeps.getPublicKey(skOther));
   // A peer cannot claim *someone else* trusts the target.
   lastP2P.deliverFrom(FRIEND, { type: 'trust_declaration', truster: VICTIM, trusted: OTHER, maxHops: 2 });
-  await new Promise(r => setTimeout(r, 20));
+  await mesh.flushMesh();
   const peers = await mesh.handleMeshRequest({ p2p: true, op: 'getPeers' });
   assert.ok(!peers.peers.reachable.some(r => r.npub === OTHER), 'declaration signed by a third party is dropped');
 });
@@ -240,13 +225,13 @@ test('signed tombstones are verified and forwarded to peers-of-peers', async () 
     direct_keywords: 'forward', related_keywords: '', timestamp: now
   });
   lastP2P.deliverFrom(FRIEND, { type: 'backfill', since: 0, docs: [doc] });
-  await new Promise(r => setTimeout(r, 20));
+  await mesh.flushMesh();
   assert.ok(await cached(url), 'doc cached from author');
 
   // The author deletes it: verify + apply + forward to the other friend.
   const tomb = signTombstone(realDeps, skFriend, FRIEND, url, Math.floor(Date.now() / 1000));
   lastP2P.deliverFrom(FRIEND, tomb);
-  await new Promise(r => setTimeout(r, 20));
+  await mesh.flushMesh();
 
   assert.equal(await cached(url), undefined, 'cached copy removed locally');
   const fwd = sentLog.find(e => e.to === FRIEND2 && e.msg.type === 'tombstone' && e.msg.url === url);
@@ -266,18 +251,18 @@ test('an unsigned or forged tombstone is not applied or forwarded', async () => 
     direct_keywords: 'stay', related_keywords: '', timestamp: now
   });
   lastP2P.deliverFrom(FRIEND, { type: 'backfill', since: 0, docs: [doc] });
-  await new Promise(r => setTimeout(r, 20));
+  await mesh.flushMesh();
   assert.ok(await cached(url), 'doc cached from author');
 
   // No signature at all.
   lastP2P.deliverFrom(FRIEND, { type: 'tombstone', url });
-  await new Promise(r => setTimeout(r, 20));
+  await mesh.flushMesh();
   assert.ok(await cached(url), 'unsigned tombstone is ignored');
 
   // Signed, but by someone who is not the claimed author (wrong key).
   const forged = signTombstone(realDeps, skOther, FRIEND, url, Math.floor(Date.now() / 1000));
   lastP2P.deliverFrom(FRIEND, forged);
-  await new Promise(r => setTimeout(r, 20));
+  await mesh.flushMesh();
   assert.ok(await cached(url), 'tombstone whose signature does not match its author is ignored');
   assert.ok(!sentLog.some(e => e.msg.type === 'tombstone' && e.msg.url === url), 'no forwarding of a bad tombstone');
 });

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { test, mock } from 'node:test';
+import { test } from 'node:test';
 
 const realDeps = await import('../lib/nostr-deps.js');
 
@@ -41,23 +41,11 @@ class FakePC {
 globalThis.RTCPeerConnection = FakePC;
 globalThis.RTCIceCandidate = class { constructor(c) { this.c = c; } };
 
-// nostr-p2p imports nostr-deps with a cache-busting query; mock that instance.
-mock.module(new URL('../lib/nostr-deps.js?v=10', import.meta.url), {
-  exports: {
-    SimplePool: FakeSimplePool,
-    finalizeEvent: realDeps.finalizeEvent,
-    generateSecretKey: realDeps.generateSecretKey,
-    getPublicKey: realDeps.getPublicKey,
-    nip19: realDeps.nip19,
-    nip44: realDeps.nip44,
-    schnorr: realDeps.schnorr,
-    sha256: realDeps.sha256,
-    bytesToHex: realDeps.bytesToHex,
-    hexToBytes: realDeps.hexToBytes
-  }
-});
-
 const { NostrP2P } = await import('../lib/nostr-p2p.js');
+
+// The real class creates its relay pool internally; swap in the fake via the
+// NostrP2P.SimplePool seam so no real relay I/O happens.
+NostrP2P.SimplePool = FakeSimplePool;
 
 // Deterministic clock so we can age an offer past PENDING_TIMEOUT.
 let fakeNow = Date.now();

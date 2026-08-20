@@ -5,8 +5,22 @@ import {
 } from '../lib/nostr-deps.js';
 import { settings, getDB } from './db.js';
 import { search as localSearch, allIndexedTerms, saveDoc, docHash } from './search.js';
-import { tokenize } from './tokenize.js';
+import { stemmed } from './tokenize.js';
 import { BloomFilter } from './bloom.js';
+
+// --- Test seam --------------------------------------------------------------
+// The mesh talks to the world through two network-facing classes (NostrP2P for
+// WebRTC data channels, SimplePool for relay events). Tests inject fakes here
+// instead of mocking modules, which is fragile across Node versions. Crypto
+// (generateSecretKey, schnorr, nip19, ...) is never injected — it works fine
+// and is needed to sign/verify real wire docs in the tests.
+let injectedDeps = null;
+export function setMeshDeps(deps) {
+  injectedDeps = deps || null;
+}
+export function resetMeshDeps() {
+  injectedDeps = null;
+}
 
 // Relays carry exactly two kinds of traffic, both addressed to a specific
 // pubkey: signaling (WebRTC handshakes, handled in lib/nostr-p2p.js) and
@@ -422,10 +436,10 @@ async function cachePeerDocs(docs) {
     const existing = await db.get('docCache', `${d.authorNpub}|${d.url}`);
     if (existing && (existing.timestamp || 0) > (d.timestamp || 0)) continue;
     const terms = new Set([
-      ...tokenize(d.title || ''),
-      ...tokenize(d.description || ''),
-      ...tokenize(d.direct_keywords || ''),
-      ...tokenize(d.related_keywords || '')
+      ...stemmed(d.title || ''),
+      ...stemmed(d.description || ''),
+      ...stemmed(d.direct_keywords || ''),
+      ...stemmed(d.related_keywords || '')
     ]);
     await db.put('docCache', {
       id: `${d.authorNpub}|${d.url}`,
@@ -543,7 +557,7 @@ async function handleQuery(sender, msg) {
   // Remember who to relay answers back to.
   if (!state.pendingRelay.has(queryId)) state.pendingRelay.set(queryId, { upstream: sender, ts: Date.now() });
 
-  const terms = tokenize(query);
+  const terms = stemmed(query);
 
   // Always answer (even empty) so the origin knows we responded and can stop
   // waiting instead of sitting out the full collection window. Serve our own
@@ -583,7 +597,7 @@ function handleAnswer(sender, msg) {
   const { queryId, results } = msg;
   if (!queryId || !Array.isArray(results)) return;
   // On-demand caching: whatever answers pass through us, keep a copy.
-  if (results.length) cachePeerDocs(results).catch(err => console.warn('[mesh] cache answers failed', err));
+  if (results.length) track(() => cachePeerDocs(results));
   const pending = state.pendingQueries.get(queryId);
   if (pending) {
     // We originated this query — aggregate the answers. Only results carrying
@@ -629,7 +643,8 @@ function handleBackfill(sender, msg) {
   const task = isDevice
     ? syncDocsFromDevice(msg.docs)
     : cachePeerDocs(msg.docs.map(d => ({ ...d, authorNpub: sender })));
-  task
+  // Return the promise so flushMesh (test hook) waits for the full cache+evict.
+  return task
     .then(() => {
       let maxTs = 0;
       for (const d of msg.docs) if (d.timestamp > maxTs) maxTs = d.timestamp;
@@ -666,23 +681,40 @@ function requestBackfills() {
   }
 }
 
+// Fire-and-forget message handlers are tracked so tests can flush them
+// deterministically (see flushMesh) instead of sleeping on a fixed delay.
+const inflight = new Set();
+function track(fn) {
+  const p = Promise.resolve().then(fn).catch(err => console.warn('[mesh] handler error', err));
+  inflight.add(p);
+  p.finally(() => inflight.delete(p));
+}
+
+// Test hook: resolve once every fire-and-forget message handler has settled.
+export async function flushMesh() {
+  for (let i = 0; i < 100 && inflight.size; i++) {
+    await Promise.allSettled([...inflight]);
+    await new Promise(r => setTimeout(r, 1));
+  }
+}
+
 function handlePeerMessage(npub, msg) {
   if (!msg || typeof msg !== 'object') return;
   if (msg.type === 'query') {
-    handleQuery(npub, msg).catch(err => console.warn('[mesh] handleQuery error', err));
+    track(() => handleQuery(npub, msg));
   } else if (msg.type === 'query_answer') {
-    handleAnswer(npub, msg);
+    track(() => handleAnswer(npub, msg));
   } else if (msg.type === 'backfill_request') {
-    handleBackfillRequest(npub, msg).catch(err => console.warn('[mesh] backfill request error', err));
+    track(() => handleBackfillRequest(npub, msg));
   } else if (msg.type === 'backfill') {
-    handleBackfill(npub, msg);
+    track(() => handleBackfill(npub, msg));
   } else if (msg.type === 'tombstone') {
     // Signed delete: verify against the author, drop our cached copy, then
     // forward so peers-of-peers learn of the deletion too.
-    handleTombstone(npub, msg).catch(() => {});
+    track(() => handleTombstone(npub, msg));
   } else if (msg.type === 'profile') {
     if (!msg.profile || typeof msg.profile !== 'object') return;
-    handleProfileMessage(npub, msg).catch(() => {});
+    track(() => handleProfileMessage(npub, msg));
   } else if (msg.type === 'filter') {
     const { bloom, termCount, seq } = msg;
     if (!bloom || !Number.isFinite(termCount) || !Number.isFinite(seq)) return;
@@ -694,14 +726,14 @@ function handlePeerMessage(npub, msg) {
     // behalf (truster === npub). Feed it into our trust graph.
     const { truster, trusted, maxHops } = msg;
     if (truster !== npub || !trusted || !Number.isFinite(maxHops)) return;
-    storeEdge(truster, trusted, Math.max(0, Math.min(maxHops, MAX_HOPS_CAP))).catch(() => {});
+    track(() => storeEdge(truster, trusted, Math.max(0, Math.min(maxHops, MAX_HOPS_CAP))));
   } else if (msg.type === 'invite_accept') {
     // They accepted our invite — finalize our side of the friendship.
-    finalizeAcceptedInvite(npub).catch(() => {});
+    track(() => finalizeAcceptedInvite(npub));
   } else if (msg.type === 'doc_request') {
-    handleDocRequest(npub, msg).catch(() => {});
+    track(() => handleDocRequest(npub, msg));
   } else if (msg.type === 'doc_response') {
-    handleDocResponse(npub, msg).catch(err => console.warn('[mesh] repair error', err));
+    track(() => handleDocResponse(npub, msg));
   }
 }
 
@@ -723,7 +755,7 @@ function pruneMeshState() {
 // answers arrive, then broadcasts a final "done" update. Returns the merged
 // (deduped by URL, ranked) results at the end.
 async function searchNetwork(query, { limit = 20, timeout = QUERY_TIMEOUT, queryId } = {}) {
-  const terms = tokenize(query);
+  const terms = stemmed(query);
   const results = new Map();
 
   // Local results.
@@ -850,6 +882,7 @@ export function computeTrustGraph() {
 
 export async function startMesh() {
   if (state && (state.started || state.starting)) return;
+  const { NostrP2P: P2PImpl = NostrP2P, SimplePool: PoolImpl = SimplePool, relays = RELAYS } = injectedDeps || {};
   state = state || {
     friends: [], maxHops: 2, edges: new Map(),
     peerFilters: new Map(), peerFilterObjs: new Map(), filterSeq: 0,
@@ -866,7 +899,7 @@ export async function startMesh() {
     state.syncDevices = !!(await settings.get('syncDevices'));
     await loadEdges();
 
-    state.pool = new SimplePool({
+    state.pool = new PoolImpl({
       enableReconnect: true,
       onRelayConnectionFailure: (url) => {
         const last = relayFailLog.get(url) || 0;
@@ -880,7 +913,7 @@ export async function startMesh() {
     // (Connection signaling is subscribed separately in NostrP2P, also filtered
     // to our pubkey.)
     state.sub = state.pool.subscribeMany(
-      RELAYS,
+      relays,
       { kinds: [INVITE_KIND], '#p': [state.pk], since: Math.floor(Date.now() / 1000) - GOSSIP_SINCE },
       { onevent: onInviteEvent }
     );
@@ -892,7 +925,7 @@ export async function startMesh() {
     }
 
     state.acceptedInvites = (await settings.get('acceptedInvites')) || [];
-    state.p2p = new NostrP2P(state.skHex, {
+    state.p2p = new P2PImpl(state.skHex, {
       onConnect: (npub) => {
         // If we accepted an invite from this peer, tell them now that we're
         // connected so they can finalize their side too.

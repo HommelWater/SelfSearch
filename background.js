@@ -1,4 +1,4 @@
-import { captureAndIndex, browserApi } from './core/capture.js';
+import { captureAndIndex, indexFromPage, browserApi } from './core/capture.js';
 import { settings } from './core/db.js';
 import { search, getRecent, deleteDoc } from './core/search.js';
 import { startMesh, handleMeshRequest, syncMesh } from './core/mesh.js';
@@ -128,6 +128,21 @@ async function handle(request) {
 
     case 'recent':
       return { success: true, results: await getRecent(request.limit) };
+
+    // Content script sent a visited page's text. Repeating visits accumulate
+    // capture samples per URL, which is what keeps only stable keywords.
+    case 'autoIndex': {
+      const page = request.page;
+      const enabled = (await settings.get('autoIndex')) !== false;
+      if (page && page.url && enabled) {
+        try {
+          await indexFromPage(page);
+        } catch (err) {
+          console.warn('[auto-index] failed', err);
+        }
+      }
+      return { success: true };
+    }
 
     case 'deleteDoc': {
       const { removed, wasOwned } = await deleteDoc(request.url);

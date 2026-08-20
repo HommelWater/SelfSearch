@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { test, mock } from 'node:test';
+import { test } from 'node:test';
 import './vendor/fake-indexeddb/auto.mjs';
 
 globalThis.localStorage = { getItem: () => null, setItem: () => {}, removeItem: () => {} };
@@ -33,27 +33,12 @@ class FakeNostrP2P {
   deliverFrom(npub, msg) { this.options.onMessage(npub, msg); }
 }
 
-mock.module(new URL('../lib/nostr-p2p.js', import.meta.url), {
-  exports: { NostrP2P: FakeNostrP2P }
-});
-mock.module(new URL('../lib/nostr-deps.js', import.meta.url), {
-  exports: {
-    SimplePool: FakeSimplePool,
-    finalizeEvent: realDeps.finalizeEvent,
-    generateSecretKey: realDeps.generateSecretKey,
-    getPublicKey: realDeps.getPublicKey,
-    nip19: realDeps.nip19,
-    schnorr: realDeps.schnorr,
-    sha256: realDeps.sha256,
-    bytesToHex: realDeps.bytesToHex,
-    hexToBytes: realDeps.hexToBytes
-  }
-});
-
 const { saveDoc, deleteDoc } = await import('../core/search.js');
 const { getDB, settings } = await import('../core/db.js');
 const mesh = await import('../core/mesh.js');
 const { signWireDoc } = await import('./helpers.mjs');
+
+mesh.setMeshDeps({ NostrP2P: FakeNostrP2P, SimplePool: FakeSimplePool, relays: [] });
 
 const skFriend = realDeps.generateSecretKey();
 const FRIEND = realDeps.nip19.npubEncode(realDeps.getPublicKey(skFriend));
@@ -79,7 +64,7 @@ test('docCache: backfill stores peer docs, served back in queries', async () => 
     timestamp: now
   });
   lastP2P.deliverFrom(FRIEND, { type: 'backfill', since: 0, docs: [friendDoc] });
-  await new Promise(r => setTimeout(r, 20));
+  await mesh.flushMesh();
 
   const cached = await cachedDocs();
   assert.equal(cached.length, 1, 'backfilled doc should be cached');
@@ -92,7 +77,7 @@ test('docCache: backfill stores peer docs, served back in queries', async () => 
   lastP2P.deliverFrom(FRIEND, {
     type: 'query', queryId: 'q1', query: 'sourdough', hops: 0, origin: FRIEND, path: [FRIEND], limit: 10
   });
-  await new Promise(r => setTimeout(r, 20));
+  await mesh.flushMesh();
   const answer = sentLog.find(e => e.msg.type === 'query_answer');
   assert.ok(answer, 'we should answer the query');
   const hit = answer.msg.results.find(r => r.url === 'https://friend.example/recipe');
@@ -115,7 +100,7 @@ test('docCache: LRU eviction removes oldest beyond the cap', async () => {
     { url: 'https://c.example/3', title: 'gamma', description: 'gamma three', direct_keywords: 'gamma', related_keywords: '', timestamp: base + 2 }
   ].map(d => signWireDoc(realDeps, skFriend, { authorNpub: FRIEND, ...d }));
   lastP2P.deliverFrom(FRIEND, { type: 'backfill', since: 0, docs });
-  await new Promise(r => setTimeout(r, 30));
+  await mesh.flushMesh();
 
   const remaining = (await cachedDocs()).map(c => c.url).sort();
   assert.equal(remaining.length, 2, 'only the cap remains after eviction');

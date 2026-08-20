@@ -97,6 +97,9 @@ Trust is transitive, hop-limited.
 | `docCache` | `id` = `authorNpub\|url` | Copies of peers' docs: same fields + `authorNpub` + `sig` + `timestamp` (author's) + `addedAt` (LRU) + `terms` |
 | `queryCache` | normalized query | `{query, results, ts}` — rolling LRU |
 | `index`    | term → `[url...]`  | Inverted index over `docs` (and optionally `docCache`) for local search |
+| `domainStats` | domain | Per-domain keyword frequency `{domain, docs, terms:{term→count}}`; common terms are deprioritized during extraction |
+| `userStats` | `self` | Keyword frequency across the whole index `{docs, terms}`; terms common to the user's entire corpus are also deprioritized |
+| `kwHistory` | url | Recent keyword captures per URL `{url, recent:[terms…]}`; drives stable-keyword consensus (only terms reappearing across captures are stored) |
 | `trust`    | `truster\|trusted` | Trust edges (the local trust graph; populated from our own friends + peers' declarations) |
 | `profiles` | `npub`             | Peer profiles `{name, avatar, bio, ts}` received over the channel |
 | `invites`  | `in\|npub` / `out\|npub` | Friend invites (pending/outgoing) |
@@ -172,9 +175,13 @@ repair machinery handles fresh joins.
 
 1. Normalize query → **check `queryCache`** first. Hit → return immediately
    (offline / repeat searches are instant).
-2. Split into terms. Compute the set of trusted peers (distance ≤ `maxHops`,
-   deduped, never queried twice per queryId) whose `filter_self` matches any
-   term.
+2. Split into terms, then **stem** each ("running"/"runs" → `run`) so
+   inflections match — the same stemming is applied at index time, so the
+   inverted index, bloom filters and peer-side re-tokenization all agree. When
+   exact terms match nothing, a **bounded prefix scan** over the index terms
+   catches partial/type-ahead queries ("sourdou" → "sourdough"). Compute the
+   set of trusted peers (distance ≤ `maxHops`, deduped, never queried twice per
+   queryId) whose `filter_self` matches any term.
 3. Send `query` to that set with `hops = maxHops - 1` and `path = [myNpub]`.
 4. Each recipient:
    - Runs the query against its **local** inverted index (`docs` ∪ `docCache`).
@@ -283,15 +290,29 @@ diameter) without overloading anyone.
 
 ## Capture pipeline (local extraction)
 
-1. On "Index this page", read the page's DOM text via a content-script injection
-   (title, meta description/keywords, body text).
+Pages are captured both explicitly (toolbar icon) and **automatically** when a
+page finishes loading (`content.js`; gated by the `autoIndex` setting), so a
+URL accumulates multiple capture samples over time.
+
+1. Read the page's DOM text (title, meta description/keywords, body text) from
+   a content script.
 2. **Extract locally**: weighted term-frequency keyword extraction over the page
    text (title 3x, meta keywords 2x, body 1x) → `{title, description,
-   direct_keywords, related_keywords}`. No cloud, no API keys.
-3. User-entered keywords (from the popup) are merged in.
-4. Store `{url, title, description, direct_keywords, related_keywords,
-   timestamp}` in `docs`; image stored locally (not shared).
-5. Update inverted index + rebuild/re-gossip `filter_self`.
+   direct_keywords, related_keywords}`. No cloud, no API keys. Keywords that
+   recur across most of a domain's indexed pages (tracked per domain in
+   `domainStats`, e.g. "video"/"likes" on youtube.com) **or across the user's
+   whole index** (`userStats`, e.g. "recipe" everywhere in a cooking-heavy
+   index) are demoted so the more unique terms rank first.
+3. **Stable-keyword consensus**: each capture's extracted terms are recorded in
+   `kwHistory` (a rolling window of the last 8 captures per URL). A term must
+   reappear in at least half the recent captures to survive — so the random or
+   viewer-specific recommendations a page mixes into its body drop out and only
+   the keywords specific to the page's content remain.
+4. User-entered keywords (from the popup) are merged in, ahead of stable ones.
+5. Store `{url, title, description, direct_keywords, related_keywords,
+   timestamp}` in `docs`; `kwHistory`/`userStats`/`domainStats` are local
+   metadata (not shared over the mesh).
+6. Update inverted index + rebuild/re-gossip `filter_self`.
 
 ## Security & privacy
 

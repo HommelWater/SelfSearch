@@ -1,3 +1,5 @@
+import { stem } from './stem.js';
+
 const STOPWORDS = new Set(`
 a about above after again against all am an and any are aren't as at be because been before being below between
 both but by can't cannot could couldn't did didn't do does doesn't doing don't down during each few for from further
@@ -18,11 +20,21 @@ export function tokenize(text) {
     .filter(w => w.length > 2 && !STOPWORDS.has(w));
 }
 
-// Unique terms across all searchable fields of a doc.
+// Bump this whenever tokenization/normalization changes so the inverted index,
+// bloom filters and docCache terms get rebuilt once against the new scheme.
+export const TOKENIZER_VERSION = 2;
+
+// Tokens reduced to their stem ("running" -> "run"). Used for the searchable
+// index and queries so inflections match; the stored keywords stay raw.
+export function stemmed(text) {
+  return tokenize(text).map(stem);
+}
+
+// Unique searchable terms across all fields of a doc (stemmed).
 export function docTerms(doc) {
   const set = new Set();
   for (const field of ['title', 'description', 'direct_keywords', 'related_keywords']) {
-    for (const t of tokenize(doc[field])) set.add(t);
+    for (const t of stemmed(doc[field])) set.add(t);
   }
   return [...set];
 }

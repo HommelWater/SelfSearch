@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { test, mock } from 'node:test';
+import { test } from 'node:test';
 import './vendor/fake-indexeddb/auto.mjs';
 
 globalThis.localStorage = { getItem: () => null, setItem: () => {}, removeItem: () => {} };
@@ -33,26 +33,11 @@ class FakeNostrP2P {
   deliverFrom(npub, msg) { this.options.onMessage(npub, msg); }
 }
 
-mock.module(new URL('../lib/nostr-p2p.js', import.meta.url), {
-  exports: { NostrP2P: FakeNostrP2P }
-});
-mock.module(new URL('../lib/nostr-deps.js', import.meta.url), {
-  exports: {
-    SimplePool: FakeSimplePool,
-    finalizeEvent: realDeps.finalizeEvent,
-    generateSecretKey: realDeps.generateSecretKey,
-    getPublicKey: realDeps.getPublicKey,
-    nip19: realDeps.nip19,
-    schnorr: realDeps.schnorr,
-    sha256: realDeps.sha256,
-    bytesToHex: realDeps.bytesToHex,
-    hexToBytes: realDeps.hexToBytes
-  }
-});
-
 const { getDB, settings } = await import('../core/db.js');
 const mesh = await import('../core/mesh.js');
 const { signWireDoc } = await import('./helpers.mjs');
+
+mesh.setMeshDeps({ NostrP2P: FakeNostrP2P, SimplePool: FakeSimplePool, relays: [] });
 
 const nsecHex = realDeps.bytesToHex(realDeps.generateSecretKey());
 const nsecSk = realDeps.hexToBytes(nsecHex);
@@ -80,7 +65,7 @@ test('backfill from a same-identity device restores docs into our own index', as
     description: 'synced across devices', direct_keywords: 'sync', related_keywords: '', timestamp: now
   });
   lastP2P.deliverFrom(NPUB, { type: 'backfill', since: 0, docs: [doc] });
-  await new Promise(r => setTimeout(r, 20));
+  await mesh.flushMesh();
 
   const db = await getDB();
   const stored = await db.get('docs', 'https://sync.example/1');
@@ -99,7 +84,7 @@ test('device sync is last-write-wins by timestamp', async () => {
     description: 'old', direct_keywords: 'sync', related_keywords: '', timestamp: now - 500
   });
   lastP2P.deliverFrom(NPUB, { type: 'backfill', since: 0, docs: [older] });
-  await new Promise(r => setTimeout(r, 20));
+  await mesh.flushMesh();
   assert.equal((await db.get('docs', 'https://sync.example/1')).title, 'From Device A', 'older copy ignored');
 
   // A newer copy wins.
@@ -108,7 +93,7 @@ test('device sync is last-write-wins by timestamp', async () => {
     description: 'newer', direct_keywords: 'sync', related_keywords: '', timestamp: now + 500
   });
   lastP2P.deliverFrom(NPUB, { type: 'backfill', since: 0, docs: [newer] });
-  await new Promise(r => setTimeout(r, 20));
+  await mesh.flushMesh();
   assert.equal((await db.get('docs', 'https://sync.example/1')).title, 'From Device A (edited)', 'newer copy applied');
 });
 
@@ -116,7 +101,7 @@ test('a profile from a same-identity device becomes our own profile', async () =
   sentLog.length = 0;
   const ts = Math.floor(Date.now() / 1000);
   lastP2P.deliverFrom(NPUB, { type: 'profile', ts, profile: { name: 'Alice', avatar: '🌻', bio: 'one identity, two devices' } });
-  await new Promise(r => setTimeout(r, 20));
+  await mesh.flushMesh();
 
   const own = await settings.get('profile');
   assert.equal(own.name, 'Alice', 'adopted the device profile as our own');
@@ -132,7 +117,7 @@ test('an older device profile never overwrites our newer one (last-write-wins)',
   await settings.set('profile', { name: 'Bob', avatar: '😀', bio: 'newer local', ts: ts + 1000 });
 
   lastP2P.deliverFrom(NPUB, { type: 'profile', ts, profile: { name: 'Stale', avatar: '', bio: 'old' } });
-  await new Promise(r => setTimeout(r, 20));
+  await mesh.flushMesh();
   assert.equal((await settings.get('profile')).name, 'Bob', 'stale device profile ignored');
 });
 

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { test, mock } from 'node:test';
+import { test } from 'node:test';
 import './vendor/fake-indexeddb/auto.mjs';
 
 globalThis.localStorage = { getItem: () => null, setItem: () => {}, removeItem: () => {} };
@@ -33,26 +33,11 @@ class FakeNostrP2P {
   deliverFrom(npub, msg) { this.options.onMessage(npub, msg); }
 }
 
-mock.module(new URL('../lib/nostr-p2p.js', import.meta.url), {
-  exports: { NostrP2P: FakeNostrP2P }
-});
-mock.module(new URL('../lib/nostr-deps.js', import.meta.url), {
-  exports: {
-    SimplePool: FakeSimplePool,
-    finalizeEvent: realDeps.finalizeEvent,
-    generateSecretKey: realDeps.generateSecretKey,
-    getPublicKey: realDeps.getPublicKey,
-    nip19: realDeps.nip19,
-    schnorr: realDeps.schnorr,
-    sha256: realDeps.sha256,
-    bytesToHex: realDeps.bytesToHex,
-    hexToBytes: realDeps.hexToBytes
-  }
-});
-
 const { saveDoc } = await import('../core/search.js');
 const { getDB } = await import('../core/db.js');
 const mesh = await import('../core/mesh.js');
+
+mesh.setMeshDeps({ NostrP2P: FakeNostrP2P, SimplePool: FakeSimplePool, relays: [] });
 
 const FRIEND = realDeps.nip19.npubEncode(realDeps.getPublicKey(realDeps.generateSecretKey()));
 
@@ -77,7 +62,7 @@ test('a missing doc is repaired from a peer cache with a verified signature', as
   // Capture our own signed copy (a friend would have this cached).
   sentLog.length = 0;
   lastP2P.deliverFrom(FRIEND, { type: 'backfill_request', since: 0 });
-  await new Promise(r => setTimeout(r, 20));
+  await mesh.flushMesh();
   const backfill = sentLog.find(e => e.msg.type === 'backfill');
   const signedDoc = backfill.msg.docs.find(d => d.url === DOC_URL);
   assert.ok(signedDoc && signedDoc.sig, 'we serve signed copies');
@@ -93,11 +78,11 @@ test('a missing doc is repaired from a peer cache with a verified signature', as
   assert.equal(resp.lost[0].url, DOC_URL);
 
   // A friend answers the doc_request with our signed doc.
-  await new Promise(r => setTimeout(r, 20));
+  await mesh.flushMesh();
   const req = sentLog.find(e => e.msg.type === 'doc_request');
   assert.ok(req, 'a doc_request went to the friend');
   lastP2P.deliverFrom(FRIEND, { type: 'doc_response', doc: signedDoc });
-  await new Promise(r => setTimeout(r, 30));
+  await mesh.flushMesh();
 
   const restored = await db.get('docs', DOC_URL);
   assert.ok(restored, 'doc restored from the peer cache');

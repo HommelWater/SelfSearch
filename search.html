@@ -139,7 +139,6 @@
     .success { background: #d1e7c5; border-left-color: #2e7d32; }
     .error { background: #ffe0e0; border-left-color: #c62828; }
     .info { background: #e3f2fd; border-left-color: #1565c0; }
-    .hint { font-size: 0.75rem; color: #2c3e2f; margin-bottom: 12px; }
   </style>
 </head>
 <body>
@@ -153,7 +152,12 @@
   </header>
 
   <section id="tab-search" class="tab-body">
-    <div class="hint">Index the current page by clicking the extension icon. Search here or from the address bar (<b>ss&nbsp;query</b>).</div>
+    <label style="display:flex; align-items:center; gap:8px; margin-bottom:16px;">
+      <input type="checkbox" id="autoIndexCheckbox">
+      <span style="font-weight:normal; text-transform:none;">Auto-index visited pages
+        <small style="color:#2c3e2f;">&nbsp;— indexes each page as you visit it; repeated visits keep only stable keywords</small>
+      </span>
+    </label>
     <div class="search-row">
       <input id="query" type="text" placeholder="Search your index..." autofocus>
       <button id="go">Search</button>

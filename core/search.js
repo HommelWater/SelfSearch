@@ -1,7 +1,11 @@
 import { getDB } from './db.js';
-import { docTerms, tokenize } from './tokenize.js';
+import { docTerms, stemmed, TOKENIZER_VERSION } from './tokenize.js';
+import { hostnameOf, domainTerms } from './domain.js';
 
 const MAX_QUERY_CACHE = 200;
+// Cap how many URLs a prefix fallback scan will collect, so a very short
+// prefix can never turn into a full-index scan.
+const MAX_PREFIX_URLS = 300;
 
 // Deterministic JSON (sorted keys) so content hashes are reproducible.
 function canonicalText(obj) {
@@ -30,6 +34,50 @@ export async function docHash(doc) {
 
 // --- Inverted index maintenance -------------------------------------------
 
+// Rebuild the inverted index + cached peer terms when the tokenizer changes
+// (e.g. stemming was added), so old raw-token keys are replaced. Idempotent:
+// runs once per TOKENIZER_VERSION and records the version in settings.
+export async function rebuildIndexForVersion(db) {
+  const saved = await db.get('settings', 'tokenizerVersion');
+  if (saved && saved.value === TOKENIZER_VERSION) return;
+
+  // Read everything before opening the write transaction to avoid overlapping
+  // transactions on the same store.
+  const docs = await db.getAll('docs');
+  const cached = await db.getAll('docCache');
+
+  const tx = db.transaction(['index', 'docCache', 'queryCache'], 'readwrite');
+  const indexStore = tx.objectStore('index');
+  await indexStore.clear();
+  await tx.objectStore('queryCache').clear();
+
+  for (const doc of docs) {
+    for (const term of docTerms(doc)) {
+      const post = await indexStore.get(term);
+      if (!post) await indexStore.put({ term, urls: [doc.url] });
+      else if (!post.urls.includes(doc.url)) {
+        post.urls.push(doc.url);
+        await indexStore.put(post);
+      }
+    }
+  }
+
+  // Re-derive cached peer terms so bloom filters match the new scheme too.
+  const cacheStore = tx.objectStore('docCache');
+  for (const c of cached) {
+    c.terms = [
+      ...stemmed(c.title || ''),
+      ...stemmed(c.description || ''),
+      ...stemmed(c.direct_keywords || ''),
+      ...stemmed(c.related_keywords || '')
+    ];
+    await cacheStore.put(c);
+  }
+
+  await tx.done;
+  await db.put('settings', { key: 'tokenizerVersion', value: TOKENIZER_VERSION });
+}
+
 async function unindexTerms(indexStore, doc) {
   for (const term of docTerms(doc)) {
     const post = await indexStore.get(term);
@@ -52,18 +100,88 @@ async function indexTerms(indexStore, doc) {
   }
 }
 
+// --- Per-domain keyword stats (common-term deprioritization) ----------------
+
+// Count a doc's keywords into its domain's stats: { domain, docs, terms }.
+async function addDomainTerms(statsStore, doc) {
+  const domain = hostnameOf(doc.url);
+  if (!domain) return;
+  const row = (await statsStore.get(domain)) || { domain, docs: 0, terms: {} };
+  row.docs += 1;
+  for (const t of domainTerms(doc)) row.terms[t] = (row.terms[t] || 0) + 1;
+  await statsStore.put(row);
+}
+
+// Remove a doc's keywords from its domain's stats (re-index / delete).
+async function removeDomainTerms(statsStore, doc) {
+  const domain = hostnameOf(doc.url);
+  if (!domain) return;
+  const row = await statsStore.get(domain);
+  if (!row) return;
+  for (const t of domainTerms(doc)) {
+    const next = (row.terms[t] || 0) - 1;
+    if (next <= 0) delete row.terms[t];
+    else row.terms[t] = next;
+  }
+  row.docs -= 1;
+  if (row.docs <= 0) await statsStore.delete(domain);
+  else await statsStore.put(row);
+}
+
+// User-level variants: the same counting, but across the whole index (key 'self').
+async function addUserTerms(statsStore, doc) {
+  const row = (await statsStore.get('self')) || { key: 'self', docs: 0, terms: {} };
+  row.docs += 1;
+  for (const t of domainTerms(doc)) row.terms[t] = (row.terms[t] || 0) + 1;
+  await statsStore.put(row);
+}
+
+async function removeUserTerms(statsStore, doc) {
+  const row = await statsStore.get('self');
+  if (!row) return;
+  for (const t of domainTerms(doc)) {
+    const next = (row.terms[t] || 0) - 1;
+    if (next <= 0) delete row.terms[t];
+    else row.terms[t] = next;
+  }
+  row.docs -= 1;
+  if (row.docs <= 0) await statsStore.delete('self');
+  else await statsStore.put(row);
+}
+
+// Keyword frequency stats for a domain, or null when unknown.
+export async function getDomainStats(domain) {
+  if (!domain) return null;
+  const db = await getDB();
+  return (await db.get('domainStats', domain)) || null;
+}
+
+// Keyword frequency stats across the whole index, or null when unknown.
+export async function getUserStats() {
+  const db = await getDB();
+  return (await db.get('userStats', 'self')) || null;
+}
+
 // Upsert a doc (replaces existing entry for the same url) and keep the
-// inverted index in sync.
+// inverted index and per-domain keyword stats in sync.
 export async function saveDoc(doc) {
   const db = await getDB();
-  const tx = db.transaction(['docs', 'index'], 'readwrite');
+  const tx = db.transaction(['docs', 'index', 'domainStats', 'userStats'], 'readwrite');
   const docsStore = tx.objectStore('docs');
   const indexStore = tx.objectStore('index');
+  const domainStore = tx.objectStore('domainStats');
+  const userStore = tx.objectStore('userStats');
 
   const old = await docsStore.get(doc.url);
-  if (old) await unindexTerms(indexStore, old);
+  if (old) {
+    await unindexTerms(indexStore, old);
+    await removeDomainTerms(domainStore, old);
+    await removeUserTerms(userStore, old);
+  }
   await docsStore.put(doc);
   await indexTerms(indexStore, doc);
+  await addDomainTerms(domainStore, doc);
+  await addUserTerms(userStore, doc);
 
   await tx.done;
   await db.put('manifest', { url: doc.url, hash: await docHash(doc), ts: Date.now() });
@@ -72,19 +190,24 @@ export async function saveDoc(doc) {
 
 export async function deleteDoc(url) {
   const db = await getDB();
-  const tx = db.transaction(['docs', 'index'], 'readwrite');
+  const tx = db.transaction(['docs', 'index', 'domainStats', 'userStats', 'kwHistory'], 'readwrite');
   const docsStore = tx.objectStore('docs');
   const indexStore = tx.objectStore('index');
+  const domainStore = tx.objectStore('domainStats');
+  const userStore = tx.objectStore('userStats');
 
   const doc = await docsStore.get(url);
   let removed = false;
   let wasOwned = false;
   if (doc) {
     await unindexTerms(indexStore, doc);
+    await removeDomainTerms(domainStore, doc);
+    await removeUserTerms(userStore, doc);
     await docsStore.delete(url);
     removed = true;
     wasOwned = true;
   }
+  await tx.objectStore('kwHistory').delete(url);
   await tx.done;
 
   // Drop it from cached queries so it doesn't reappear right after deletion.
@@ -130,7 +253,7 @@ async function cacheQuery(db, key, results) {
 }
 
 export async function search(query, { limit = 20 } = {}) {
-  const terms = tokenize(query);
+  const terms = stemmed(query);
   if (!terms.length) return [];
 
   const key = terms.join(' ');
@@ -147,6 +270,21 @@ export async function search(query, { limit = 20 } = {}) {
     const post = await db.get('index', term);
     for (const url of post?.urls || []) {
       matchCount.set(url, (matchCount.get(url) || 0) + 1);
+    }
+  }
+
+  // When nothing matches exactly, fall back to prefix matches on the index
+  // terms ("sourdo" -> "sourdough"). A bounded key-range scan, not fuzzy.
+  if (!matchCount.size && typeof IDBKeyRange !== 'undefined') {
+    for (const term of terms) {
+      const posts = await db.getAll('index', IDBKeyRange.bound(term, term + '\uffff'));
+      for (const post of posts) {
+        for (const url of post.urls || []) {
+          matchCount.set(url, (matchCount.get(url) || 0) + 1);
+        }
+        if (matchCount.size >= MAX_PREFIX_URLS) break;
+      }
+      if (matchCount.size >= MAX_PREFIX_URLS) break;
     }
   }
   if (!matchCount.size) return [];
