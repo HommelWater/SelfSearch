@@ -30,6 +30,7 @@ function shouldAutoIndex(page) {
 const api = typeof browser !== 'undefined' ? browser : chrome;
 
 let lastCaptured = '';
+let lastSeenUrl = location.href;
 let settleTimer = null;
 let retryTimer = null;
 
@@ -62,6 +63,7 @@ function capture() {
 // URL changed without a full reload (SPA navigation): debounce so the app has
 // a moment to render its new view before we read the DOM.
 function onUrlChange() {
+  lastSeenUrl = location.href;
   clearTimeout(settleTimer);
   settleTimer = setTimeout(() => {
     settleTimer = null;
@@ -74,7 +76,10 @@ if (document.readyState === 'complete') capture();
 else window.addEventListener('load', capture, { once: true });
 
 // SPA navigations: history.pushState/replaceState fire no event, so wrap them;
-// back/forward and hash changes fire popstate/hashchange.
+// back/forward and hash changes fire popstate/hashchange. Some apps (e.g.
+// Discord) cache a reference to the native pushState at startup, so the wrap
+// is missed — the polling fallback below catches any URL change regardless of
+// how the app navigated.
 const hist = history.pushState;
 history.pushState = function (...args) {
   hist.apply(this, args);
@@ -87,3 +92,12 @@ history.replaceState = function (...args) {
 };
 window.addEventListener('popstate', onUrlChange);
 window.addEventListener('hashchange', onUrlChange);
+
+// Fallback: detect URL changes we couldn't hook, plus a fast check when the
+// tab becomes visible again (navigation may have happened in the background).
+setInterval(() => {
+  if (location.href !== lastSeenUrl) onUrlChange();
+}, 1000);
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && location.href !== lastSeenUrl) onUrlChange();
+});

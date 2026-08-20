@@ -15,6 +15,8 @@ let currentTitle = 'Sourdough Bread Recipe';
 let currentBody = ('sourdough bread recipe flour water starter ').repeat(15) + ' trending famous subscription ';
 globalThis.document = {
   readyState: 'complete',
+  visibilityState: 'visible',
+  addEventListener() {},
   get title() { return currentTitle; },
   querySelector: () => ({ content: 'sourdough, bread, recipe' }),
   body: { get innerText() { return currentBody; } }
@@ -67,6 +69,23 @@ test('re-captures when the url changes without a reload (SPA navigation)', async
   const msg = sent[sent.length - 1];
   assert.equal(msg.page.url, 'https://www.youtube.com/watch?v=def456');
   assert.equal(msg.page.title, 'Sourdough Starter Guide');
+});
+
+test('polling fallback catches URL changes the history hook misses', async () => {
+  const before = sent.length;
+  // Simulate an app that navigates without touching our wrapped pushState
+  // (e.g. Discord caching the native reference): the URL just changes.
+  currentUrl = 'https://www.youtube.com/watch?v=ghi789';
+  currentTitle = 'Sourdough FAQ';
+  currentBody = ('sourdough faq hydration bulk rise ').repeat(15) + ' pinned replies ';
+
+  // No pushState/popstate fires — only the 1s poll can notice.
+  await new Promise(r => setTimeout(r, 2200)); // poll tick (<=1s) + settle debounce (800ms)
+
+  const msg = sent[sent.length - 1];
+  assert.equal(sent.length, before + 1, 'the poll detected the un-hooked navigation');
+  assert.equal(msg.page.url, 'https://www.youtube.com/watch?v=ghi789');
+  assert.equal(msg.page.title, 'Sourdough FAQ');
 });
 
 test('auto-index respects the autoIndex setting', async () => {
