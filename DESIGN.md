@@ -290,9 +290,12 @@ diameter) without overloading anyone.
 
 ## Capture pipeline (local extraction)
 
-Pages are captured both explicitly (toolbar icon) and **automatically** when a
-page finishes loading (`content.js`; gated by the `autoIndex` setting), so a
-URL accumulates multiple capture samples over time.
+Pages are captured both explicitly (toolbar icon) and **automatically** by
+`content.js` (gated by the `autoIndex` setting): on every full page load and
+whenever the URL changes without a reload (single-page app navigations via
+`history.pushState`/`replaceState`, back/forward and hash changes), debounced so
+the app can render first. A URL therefore accumulates capture samples over
+time.
 
 1. Read the page's DOM text (title, meta description/keywords, body text) from
    a content script.

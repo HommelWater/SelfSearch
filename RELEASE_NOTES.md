@@ -1,3 +1,9 @@
+SelfSearch 1.3.1 - Release Notes
+
+- Auto-indexing now also captures a page when its URL changes without a full reload (single-page apps). The content script watches history.pushState/replaceState, back/forward and hash changes, and captures the new view after a short debounce so the app can render first. Previously only full page loads were captured, so navigating within apps like Gmail, GitHub or YouTube never indexed the new pages.
+
+---
+
 SelfSearch 1.3.0 - Release Notes
 
 Searching and indexing got smarter.

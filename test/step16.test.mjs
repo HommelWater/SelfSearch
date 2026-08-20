@@ -9,14 +9,19 @@ const sent = [];
 globalThis.chrome = {
   runtime: { sendMessage: (msg) => { sent.push(msg); return Promise.resolve(); } }
 };
+
+let currentUrl = 'https://www.youtube.com/watch?v=abc123';
+let currentTitle = 'Sourdough Bread Recipe';
+let currentBody = ('sourdough bread recipe flour water starter ').repeat(15) + ' trending famous subscription ';
 globalThis.document = {
   readyState: 'complete',
-  title: 'Sourdough Bread Recipe',
+  get title() { return currentTitle; },
   querySelector: () => ({ content: 'sourdough, bread, recipe' }),
-  body: { innerText: ('sourdough bread recipe flour water starter ').repeat(15) + ' trending famous subscription ' }
+  body: { get innerText() { return currentBody; } }
 };
-globalThis.location = { href: 'https://www.youtube.com/watch?v=abc123' };
+globalThis.location = { get href() { return currentUrl; } };
 globalThis.window = { addEventListener() {} };
+globalThis.history = { pushState() {}, replaceState() {} };
 
 // Importing the content script executes its top-level capture on "page load".
 await import('../content.js');
@@ -48,6 +53,20 @@ test('the background path fully indexes the captured page', async () => {
 
   const hits = await search('sourdough');
   assert.ok(hits.some(d => d.url === doc.url), 'page is searchable after auto-index');
+});
+
+test('re-captures when the url changes without a reload (SPA navigation)', async () => {
+  const before = sent.length;
+  currentUrl = 'https://www.youtube.com/watch?v=def456';
+  currentTitle = 'Sourdough Starter Guide';
+  currentBody = ('sourdough starter feeding schedule ').repeat(15) + ' comments likes subscribed ';
+  globalThis.history.pushState(); // wrapped by content.js -> schedules a debounced capture
+  await new Promise(r => setTimeout(r, 1000)); // wait out the 800ms settle debounce
+
+  assert.equal(sent.length, before + 1, 'a new autoIndex message is sent for the new url');
+  const msg = sent[sent.length - 1];
+  assert.equal(msg.page.url, 'https://www.youtube.com/watch?v=def456');
+  assert.equal(msg.page.title, 'Sourdough Starter Guide');
 });
 
 test('auto-index respects the autoIndex setting', async () => {

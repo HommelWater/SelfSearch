@@ -1,6 +1,7 @@
-// Auto-index pages after the user visits them: when the page finishes loading,
-// read its text and ask the background to index it. Repeated visits to the same
-// URL accumulate capture samples, so only keywords stable across reloads stick.
+// Auto-index pages after the user visits them: capture a page's text when it
+// finishes loading AND whenever its URL changes without a reload (single-page
+// apps), then ask the background to index it. Repeated captures of the same
+// URL accumulate samples, so only keywords stable across visits stick.
 //
 // This is a classic (non-module) content script — the helpers it needs are
 // inlined here rather than imported, because module content scripts are not
@@ -28,6 +29,15 @@ function shouldAutoIndex(page) {
 
 const api = typeof browser !== 'undefined' ? browser : chrome;
 
+let lastCaptured = '';
+let settleTimer = null;
+let retryTimer = null;
+
+function send(page) {
+  lastCaptured = page.url;
+  api.runtime.sendMessage({ action: 'autoIndex', page }).catch(() => {});
+}
+
 function capture() {
   let page;
   try {
@@ -35,9 +45,45 @@ function capture() {
   } catch (err) {
     return;
   }
-  if (!shouldAutoIndex(page)) return;
-  api.runtime.sendMessage({ action: 'autoIndex', page }).catch(() => {});
+  if (!page.url || page.url === lastCaptured) return;
+  if (String(page.bodyText || '').trim().length < 200) {
+    // SPA content may still be rendering — try once more shortly after.
+    if (!retryTimer && location.href === page.url) {
+      retryTimer = setTimeout(() => {
+        retryTimer = null;
+        if (location.href === page.url) capture();
+      }, 2000);
+    }
+    return;
+  }
+  send(page);
 }
 
+// URL changed without a full reload (SPA navigation): debounce so the app has
+// a moment to render its new view before we read the DOM.
+function onUrlChange() {
+  clearTimeout(settleTimer);
+  settleTimer = setTimeout(() => {
+    settleTimer = null;
+    capture();
+  }, 800);
+}
+
+// Full page loads (initial load + hard navigations).
 if (document.readyState === 'complete') capture();
 else window.addEventListener('load', capture, { once: true });
+
+// SPA navigations: history.pushState/replaceState fire no event, so wrap them;
+// back/forward and hash changes fire popstate/hashchange.
+const hist = history.pushState;
+history.pushState = function (...args) {
+  hist.apply(this, args);
+  onUrlChange();
+};
+const histReplace = history.replaceState;
+history.replaceState = function (...args) {
+  histReplace.apply(this, args);
+  onUrlChange();
+};
+window.addEventListener('popstate', onUrlChange);
+window.addEventListener('hashchange', onUrlChange);
