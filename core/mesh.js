@@ -4,7 +4,7 @@ import {
   schnorr, sha256, bytesToHex, hexToBytes
 } from '../lib/nostr-deps.js';
 import { settings, getDB } from './db.js';
-import { search as localSearch, allIndexedTerms, saveDoc, docHash } from './search.js';
+import { search as localSearch, searchAll as localSearchAll, allIndexedTerms, saveDoc, docHash } from './search.js';
 import { stemmed } from './tokenize.js';
 import { BloomFilter } from './bloom.js';
 
@@ -515,11 +515,14 @@ function broadcastSearchUpdate(queryId, pending, done) {
   const api = runtimeApi();
   if (!api || !api.runtime) return; // not in a messaging context (tests)
   try {
-    const results = rankResults(pending.results).slice(0, pending.limit);
+    const offset = pending.offset || 0;
+    const ranked = rankResults(pending.results);
+    const results = ranked.slice(offset, offset + pending.limit);
     api.runtime.sendMessage({
       type: 'search_partial',
       queryId,
       results,
+      total: ranked.length,
       queriedPeers: (pending.targets || []).length,
       answeredPeers: pending.answered ? pending.answered.size : 0,
       done
@@ -754,13 +757,14 @@ function pruneMeshState() {
 // trusted peers whose bloom filters match. Streams partial result sets as
 // answers arrive, then broadcasts a final "done" update. Returns the merged
 // (deduped by URL, ranked) results at the end.
-async function searchNetwork(query, { limit = 20, timeout = QUERY_TIMEOUT, queryId } = {}) {
+async function searchNetwork(query, { limit = 20, offset = 0, timeout = QUERY_TIMEOUT, queryId } = {}) {
   const terms = stemmed(query);
   const results = new Map();
 
-  // Local results.
-  const local = terms.length ? await localSearch(query, { limit }) : [];
-  for (const d of local) results.set(d.url, { ...toWireDoc(d), authorNpub: state.npub, source: 'local' });
+  // Local results: ALL matches, so the merged set can be paged consistently
+  // after peer answers are added.
+  const local = terms.length ? await localSearchAll(query) : { results: [], total: 0 };
+  for (const d of local.results) results.set(d.url, { ...toWireDoc(d), authorNpub: state.npub, source: 'local' });
 
   const qid = queryId || ((crypto && crypto.randomUUID)
     ? crypto.randomUUID()
@@ -779,7 +783,7 @@ async function searchNetwork(query, { limit = 20, timeout = QUERY_TIMEOUT, query
     const hasDeeperHops = [...computeTrustGraph().values()].some(n => n.depth >= 2);
     const started = Date.now();
     const pending = {
-      results, answered: new Set(), targets, limit,
+      results, answered: new Set(), targets, limit, offset,
       onSettled: null, onUpdate: null, broadcastTimer: null
     };
     state.pendingQueries.set(qid, pending);
@@ -817,8 +821,9 @@ async function searchNetwork(query, { limit = 20, timeout = QUERY_TIMEOUT, query
     state.pendingQueries.delete(qid);
 
     broadcastSearchUpdate(qid, pending, true); // final
+    const merged = rankResults(results);
     return {
-      results: rankResults(results).slice(0, limit),
+      results: withTotal(merged.slice(offset, offset + limit), merged.length),
       queriedPeers: targets.length,
       answeredPeers: pending.answered.size,
       queryId: qid
@@ -826,8 +831,18 @@ async function searchNetwork(query, { limit = 20, timeout = QUERY_TIMEOUT, query
   }
 
   // No peers queried: stream a single "done" update so the page stops waiting.
-  broadcastSearchUpdate(qid, { results, targets, limit, answered: new Set() }, true);
-  return { results: rankResults(results).slice(0, limit), queriedPeers: 0, answeredPeers: 0, queryId: qid };
+  broadcastSearchUpdate(qid, { results, targets, limit, offset, answered: new Set() }, true);
+  const merged = rankResults(results);
+  return {
+    results: withTotal(merged.slice(offset, offset + limit), merged.length),
+    queriedPeers: 0, answeredPeers: 0, queryId: qid
+  };
+}
+
+// Attach the total match count as a non-enumerable property on a result array.
+function withTotal(results, total) {
+  Object.defineProperty(results, 'total', { value: total, enumerable: false });
+  return results;
 }
 
 function rankResults(results) {
@@ -1140,10 +1155,18 @@ export async function handleMeshRequest(request) {
     case 'search': {
       const res = await searchNetwork(request.query, {
         limit: request.limit || 20,
+        offset: request.offset || 0,
         timeout: request.timeout,
         queryId: request.queryId
       });
-      return { success: true, results: res.results, queriedPeers: res.queriedPeers, answeredPeers: res.answeredPeers, queryId: res.queryId };
+      return {
+        success: true,
+        results: res.results,
+        total: res.results.total || 0,
+        queriedPeers: res.queriedPeers,
+        answeredPeers: res.answeredPeers,
+        queryId: res.queryId
+      };
     }
 
     case 'setProfile': {

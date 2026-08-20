@@ -124,8 +124,10 @@ function forwardToMesh(request, sendResponse) {
 // ----- Non-p2p message handling (search, recent, settings) -----
 async function handle(request) {
   switch (request.action) {
-    case 'search':
-      return { success: true, results: await search(request.query, { limit: request.limit }) };
+    case 'search': {
+      const results = await search(request.query, { limit: request.limit, offset: request.offset || 0 });
+      return { success: true, results, total: results.total || 0 };
+    }
 
     case 'recent':
       return { success: true, results: await getRecent(request.limit) };

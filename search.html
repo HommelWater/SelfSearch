@@ -96,6 +96,20 @@
     button { background: #EDA35A; cursor: pointer; font-weight: 500; }
     button::-moz-focus-inner { border: 0; padding: 0; }
     button.secondary { background: #E1E9C9; }
+    .search-row select {
+      width: auto;
+      margin: 4px 0;
+      padding: 12px;
+      border: 1px solid #222;
+      background: #E1E9C9;
+      font-size: 1rem;
+      font-family: inherit;
+      color: inherit;
+    }
+    .pager { display: flex; gap: 8px; align-items: center; margin-top: 14px; }
+    .pager button { width: auto; padding: 6px 12px; margin: 0; }
+    .pager button:disabled { opacity: 0.4; cursor: default; }
+    .pager .pager-info { font-size: 0.75rem; color: #2c3e2f; }
     .server-row { display: flex; gap: 8px; align-items: center; margin: 4px 0; }
     .server-row input { flex: 1; margin: 0; }
     .server-row button { width: auto; padding: 8px 14px; margin: 0; }
@@ -161,9 +175,15 @@
     <div class="search-row">
       <input id="query" type="text" placeholder="Search your index..." autofocus>
       <button id="go">Search</button>
+      <select id="pageSize" title="Results per page">
+        <option value="10">10 / page</option>
+        <option value="20" selected>20 / page</option>
+        <option value="50">50 / page</option>
+      </select>
     </div>
     <div id="meta"></div>
     <div id="results"></div>
+    <div id="pager" class="pager"></div>
   </section>
 
   <section id="tab-peers" class="tab-body" style="display:none">

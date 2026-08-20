@@ -175,6 +175,10 @@ repair machinery handles fresh joins.
 
 1. Normalize query → **check `queryCache`** first. Hit → return immediately
    (offline / repeat searches are instant).
+1b. **Pagination**: the ranked result set is sliced by `limit`/`offset` (page 0
+   cached; deeper pages recompute cheaply). The result array carries a
+   non-enumerable `total` so the UI can render Prev/Next and "Page X of Y".
+   The mesh's merged set (local + peer answers) is paged the same way.
 2. Split into terms, then **stem** each ("running"/"runs" → `run`) so
    inflections match — the same stemming is applied at index time, so the
    inverted index, bloom filters and peer-side re-tokenization all agree. The

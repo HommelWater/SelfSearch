@@ -244,33 +244,25 @@ function score(doc, matchCount) {
   return matchCount * 1000 + Math.max(0, 1000 - ageDays);
 }
 
-async function cacheQuery(db, key, results) {
+async function cacheQuery(db, key, results, total) {
   const existing = await db.getAll('queryCache');
   if (existing.length >= MAX_QUERY_CACHE) {
     existing.sort((a, b) => a.ts - b.ts);
     await db.delete('queryCache', existing[0].query);
   }
-  await db.put('queryCache', { query: key, results, ts: Date.now() });
+  await db.put('queryCache', { query: key, results, total, ts: Date.now() });
 }
 
-export async function search(query, { limit = 20 } = {}) {
-  const terms = stemmed(query);
-  if (!terms.length) return [];
+// Attach the total match count as a non-enumerable property so the returned
+// array still behaves like a plain result list (deepEqual, .length, .some...).
+function withTotal(results, total) {
+  Object.defineProperty(results, 'total', { value: total, enumerable: false });
+  return results;
+}
 
-  const db = await getDB();
-  // Query-key map: add thesaurus + learned-click keys so synonyms and
-  // question-style phrasing still match the index ("fixing" -> "repair").
-  const extra = await expandQuery(terms, db);
-  const allTerms = extra.length ? [...terms, ...extra] : terms;
-
-  const key = allTerms.join(' ');
-
-  const cached = await db.get('queryCache', key);
-  if (cached) {
-    cached.results.forEach(r => (r.cached = true));
-    return cached.results.slice(0, limit);
-  }
-
+// All local matches for the query terms, ranked (no paging). Used by search()
+// for one page, and by the mesh to merge with peer results before paging.
+async function rankLocal(allTerms, db) {
   const matchCount = new Map();
   for (const term of allTerms) {
     const post = await db.get('index', term);
@@ -282,7 +274,7 @@ export async function search(query, { limit = 20 } = {}) {
   // When nothing matches exactly, fall back to prefix matches on the index
   // terms ("sourdo" -> "sourdough"). A bounded key-range scan, not fuzzy.
   if (!matchCount.size && typeof IDBKeyRange !== 'undefined') {
-    for (const term of terms) {
+    for (const term of allTerms) {
       const posts = await db.getAll('index', IDBKeyRange.bound(term, term + '\uffff'));
       for (const post of posts) {
         for (const url of post.urls || []) {
@@ -293,7 +285,7 @@ export async function search(query, { limit = 20 } = {}) {
       if (matchCount.size >= MAX_PREFIX_URLS) break;
     }
   }
-  if (!matchCount.size) return [];
+  if (!matchCount.size) return { ranked: [], total: 0 };
 
   const docsStore = db.transaction('docs').store;
   const out = [];
@@ -302,13 +294,50 @@ export async function search(query, { limit = 20 } = {}) {
     if (doc) out.push({ ...doc, matchCount: count });
   }
 
-  const results = out
+  const ranked = out
     .map(d => ({ ...d, score: score(d, d.matchCount) }))
-    .sort((a, b) => b.score - a.score)
-    .slice(0, limit);
+    .sort((a, b) => b.score - a.score);
+  return { ranked, total: ranked.length };
+}
 
-  await cacheQuery(db, key, results);
-  return results;
+// One page of results. `offset` slices into the ranked list; `total` (the full
+// match count, non-enumerable on the returned array) lets the UI build pages.
+// Page 0 is cached; deeper pages recompute (cheap: index lookups + sort).
+export async function search(query, { limit = 20, offset = 0 } = {}) {
+  const terms = stemmed(query);
+  if (!terms.length) return withTotal([], 0);
+
+  const db = await getDB();
+  // Query-key map: add thesaurus + learned-click keys so synonyms and
+  // question-style phrasing still match the index ("fixing" -> "repair").
+  const extra = await expandQuery(terms, db);
+  const allTerms = extra.length ? [...terms, ...extra] : terms;
+  const key = allTerms.join(' ');
+
+  if (offset === 0) {
+    const cached = await db.get('queryCache', key);
+    if (cached) {
+      cached.results.forEach(r => (r.cached = true));
+      return withTotal(cached.results.slice(0, limit), cached.total ?? cached.results.length);
+    }
+  }
+
+  const { ranked, total } = await rankLocal(allTerms, db);
+  const page = ranked.slice(offset, offset + limit);
+  if (offset === 0) await cacheQuery(db, key, page, total);
+  return withTotal(page, total);
+}
+
+// The full ranked local result set (used by the mesh to merge with peer
+// answers before paging the combined results).
+export async function searchAll(query) {
+  const terms = stemmed(query);
+  if (!terms.length) return { results: [], total: 0 };
+  const db = await getDB();
+  const extra = await expandQuery(terms, db);
+  const allTerms = extra.length ? [...terms, ...extra] : terms;
+  const { ranked, total } = await rankLocal(allTerms, db);
+  return { results: ranked, total };
 }
 
 export async function getRecent(limit = 20) {

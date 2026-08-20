@@ -8,7 +8,56 @@ const queryInput = document.getElementById('query');
 const goBtn = document.getElementById('go');
 const metaDiv = document.getElementById('meta');
 const resultsDiv = document.getElementById('results');
+const pagerDiv = document.getElementById('pager');
+const pageSizeSelect = document.getElementById('pageSize');
 const autoIndexCheckbox = document.getElementById('autoIndexCheckbox');
+
+// --- Pagination state ------------------------------------------------------
+let pageSize = 20;
+let currentPage = 1;
+let totalResults = 0;
+let lastQuery = '';
+
+function numPages() {
+  return Math.max(1, Math.ceil(totalResults / pageSize));
+}
+
+function fmtTotal(n) {
+  return `${n} result${n === 1 ? '' : 's'}`;
+}
+
+function renderPager() {
+  pagerDiv.innerHTML = '';
+  const pages = numPages();
+  if (currentPage > pages) currentPage = pages;
+
+  const prev = document.createElement('button');
+  prev.textContent = '← Prev';
+  prev.disabled = currentPage <= 1;
+  prev.addEventListener('click', () => goToPage(currentPage - 1));
+
+  const next = document.createElement('button');
+  next.textContent = 'Next →';
+  next.disabled = currentPage >= pages;
+  next.addEventListener('click', () => goToPage(currentPage + 1));
+
+  const info = document.createElement('span');
+  info.className = 'pager-info';
+  info.textContent = `Page ${currentPage} of ${pages} · ${fmtTotal(totalResults)}`;
+
+  pagerDiv.append(prev, info, next);
+}
+
+function goToPage(p) {
+  if (p < 1) return;
+  currentPage = p;
+  run();
+}
+
+function pageMeta(ms, suffix = '') {
+  const timing = (ms == null) ? '' : `${ms}ms · `;
+  return `${fmtTotal(totalResults)} · Page ${currentPage}/${numPages()} · ${timing}${suffix}`;
+}
 
 // Set while a network search is in flight; used to filter streaming partials.
 let currentQueryId = null;
@@ -115,17 +164,23 @@ async function run() {
   const q = queryInput.value.trim();
   if (!q) {
     currentQueryId = null;
+    pagerDiv.innerHTML = '';
     const count = await docCount();
     metaDiv.textContent = `${count} indexed page${count === 1 ? '' : 's'}.`;
     render(await getRecent(20));
     return;
   }
+  // A new query starts at page 1; navigation keeps the current page.
+  if (q !== lastQuery) { lastQuery = q; currentPage = 1; }
   currentQueryId = null; // drop partials from any previous search
+  const offset = (currentPage - 1) * pageSize;
   const t0 = performance.now();
-  const results = await search(q, { limit: 20 });
+  const results = await search(q, { limit: pageSize, offset });
+  totalResults = results.total || 0;
   const ms = Math.round(performance.now() - t0);
-  metaDiv.textContent = `${results.length} result${results.length === 1 ? '' : 's'} · ${ms}ms · searching network…`;
+  metaDiv.textContent = pageMeta(ms, ' · searching network…');
   render(results);
+  renderPager();
 
   // Stream peer results in as they arrive (mesh broadcasts `search_partial`).
   const queryId = (crypto && crypto.randomUUID)
@@ -135,7 +190,7 @@ async function run() {
 
   let resp;
   try {
-    resp = await api.runtime.sendMessage({ p2p: true, op: 'search', query: q, limit: 20, queryId });
+    resp = await api.runtime.sendMessage({ p2p: true, op: 'search', query: q, limit: pageSize, offset, queryId });
   } catch {
     resp = null;
   }
@@ -143,31 +198,37 @@ async function run() {
   if (!resp || !resp.success) {
     currentQueryId = null;
     const total = Math.round(performance.now() - t0);
-    metaDiv.textContent = `${results.length} result${results.length === 1 ? '' : 's'} · ${total}ms · mesh: ${resp?.error || 'offline'}`;
-  } else if (resp.results && resp.results.length) {
+    metaDiv.textContent = pageMeta(total, ` · mesh: ${resp?.error || 'offline'}`);
+  } else {
     currentQueryId = null;
     const total = Math.round(performance.now() - t0);
-    metaDiv.textContent =
-      `${resp.results.length} result${resp.results.length === 1 ? '' : 's'} · ${total}ms` +
-      (resp.queriedPeers ? ` · ${resp.answeredPeers}/${resp.queriedPeers} peers` : '');
+    if (typeof resp.total === 'number') totalResults = resp.total;
+    metaDiv.textContent = pageMeta(total, resp.queriedPeers ? ` · ${resp.answeredPeers}/${resp.queriedPeers} peers` : '');
     render(resp.results);
+    renderPager();
   }
 }
 
 // Incoming streaming updates from the mesh while a search is in flight.
 api.runtime.onMessage.addListener((msg) => {
   if (!msg || msg.type !== 'search_partial' || msg.queryId !== currentQueryId) return false;
-  const n = msg.results.length;
+  if (typeof msg.total === 'number') totalResults = msg.total;
   metaDiv.textContent = msg.done
-    ? `${n} result${n === 1 ? '' : 's'} · ${msg.answeredPeers}/${msg.queriedPeers} peers`
-    : `${n} result${n === 1 ? '' : 's'} · streaming ${msg.answeredPeers}/${msg.queriedPeers} peers…`;
+    ? pageMeta(null, ` · ${msg.answeredPeers}/${msg.queriedPeers} peers`)
+    : pageMeta(null, ` · streaming ${msg.answeredPeers}/${msg.queriedPeers} peers…`);
   render(msg.results);
+  renderPager();
   if (msg.done) currentQueryId = null;
   return false;
 });
 
 goBtn.addEventListener('click', run);
 queryInput.addEventListener('keydown', e => { if (e.key === 'Enter') run(); });
+pageSizeSelect.addEventListener('change', () => {
+  pageSize = Number(pageSizeSelect.value) || 20;
+  currentPage = 1;
+  run();
+});
 
 // Auto-index toggle (persisted; the background respects it for autoIndex).
 async function loadAutoIndex() {
