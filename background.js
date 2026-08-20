@@ -1,6 +1,7 @@
 import { captureAndIndex, indexFromPage, browserApi } from './core/capture.js';
 import { settings } from './core/db.js';
 import { search, getRecent, deleteDoc } from './core/search.js';
+import { observeQueryText } from './core/qk.js';
 import { startMesh, handleMeshRequest, syncMesh } from './core/mesh.js';
 
 const api = browserApi();
@@ -141,6 +142,13 @@ async function handle(request) {
           console.warn('[auto-index] failed', err);
         }
       }
+      return { success: true };
+    }
+
+    // A result was clicked: learn which keywords that query found useful, so
+    // future similar queries expand with them (the query-key map).
+    case 'logResultClick': {
+      await observeQueryText(request.query, request.keywords);
       return { success: true };
     }
 

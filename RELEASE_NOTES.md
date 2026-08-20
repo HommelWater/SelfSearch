@@ -1,3 +1,11 @@
+SelfSearch 1.3.2 - Release Notes
+
+- Smarter search with a query-key map. Search now understands synonyms and question-style phrasing: a small thesaurus expands terms like "fixing" to also try "repair", "cooking" to "recipe"/"bake", "meaning" to "define", and so on, so pages are found even when they phrase things differently from the query.
+- Search keeps getting better with use. Clicking a search result teaches the extension which keywords that query was useful for; future similar queries expand with them (stored privately, locally).
+- No reindex needed; the map simply fills in as you search.
+
+---
+
 SelfSearch 1.3.1 - Release Notes
 
 - Auto-indexing now also captures a page when its URL changes without a full reload (single-page apps). The content script watches history.pushState/replaceState, back/forward and hash changes, and captures the new view after a short debounce so the app can render first. Previously only full page loads were captured, so navigating within apps like Gmail, GitHub or YouTube never indexed the new pages.

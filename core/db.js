@@ -3,7 +3,7 @@ import { hostnameOf, domainTerms } from './domain.js';
 import { rebuildIndexForVersion } from './search.js';
 
 const DB_NAME = 'selfsearch';
-const DB_VERSION = 10;
+const DB_VERSION = 11;
 
 let dbPromise = null;
 
@@ -14,6 +14,7 @@ let dbPromise = null;
 //   domainStats  keyPath domain  — per-domain keyword frequency (common-term deprioritization)
 //   userStats    keyPath key     — keyword frequency across the whole index (key 'self')
 //   kwHistory    keyPath url     — recent keyword captures per URL (stable-keyword consensus)
+//   qk           keyPath term    — query-key map: query term -> clicked keyword counts
 //   queryCache   keyPath query   — rolling LRU query -> results
 //   trust        keyPath id      — trust edges (id = truster + '|' + trusted)
 //   profiles     keyPath npub    — gossiped peer profiles (name, avatar, bio)
@@ -85,6 +86,9 @@ export function getDB() {
         }
         if (!db.objectStoreNames.contains('kwHistory')) {
           db.createObjectStore('kwHistory', { keyPath: 'url' });
+        }
+        if (!db.objectStoreNames.contains('qk')) {
+          db.createObjectStore('qk', { keyPath: 'term' });
         }
         if (!db.objectStoreNames.contains('queryCache')) {
           db.createObjectStore('queryCache', { keyPath: 'query' });

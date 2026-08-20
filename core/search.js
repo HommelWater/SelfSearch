@@ -1,6 +1,7 @@
 import { getDB } from './db.js';
 import { docTerms, stemmed, TOKENIZER_VERSION } from './tokenize.js';
 import { hostnameOf, domainTerms } from './domain.js';
+import { expandQuery } from './qk.js';
 
 const MAX_QUERY_CACHE = 200;
 // Cap how many URLs a prefix fallback scan will collect, so a very short
@@ -256,8 +257,13 @@ export async function search(query, { limit = 20 } = {}) {
   const terms = stemmed(query);
   if (!terms.length) return [];
 
-  const key = terms.join(' ');
   const db = await getDB();
+  // Query-key map: add thesaurus + learned-click keys so synonyms and
+  // question-style phrasing still match the index ("fixing" -> "repair").
+  const extra = await expandQuery(terms, db);
+  const allTerms = extra.length ? [...terms, ...extra] : terms;
+
+  const key = allTerms.join(' ');
 
   const cached = await db.get('queryCache', key);
   if (cached) {
@@ -266,7 +272,7 @@ export async function search(query, { limit = 20 } = {}) {
   }
 
   const matchCount = new Map();
-  for (const term of terms) {
+  for (const term of allTerms) {
     const post = await db.get('index', term);
     for (const url of post?.urls || []) {
       matchCount.set(url, (matchCount.get(url) || 0) + 1);

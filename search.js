@@ -42,6 +42,14 @@ function render(results) {
     a.target = '_blank';
     a.rel = 'noopener';
     a.textContent = r.title;
+    a.addEventListener('click', () => {
+      // Learn this query -> this result's keywords (query-key map).
+      api.runtime.sendMessage({
+        action: 'logResultClick',
+        query: queryInput.value.trim(),
+        keywords: [r.direct_keywords, r.related_keywords].filter(Boolean).join(' ')
+      }).catch(() => {});
+    });
     h.appendChild(a);
     el.appendChild(h);
 

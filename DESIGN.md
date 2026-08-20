@@ -177,8 +177,12 @@ repair machinery handles fresh joins.
    (offline / repeat searches are instant).
 2. Split into terms, then **stem** each ("running"/"runs" → `run`) so
    inflections match — the same stemming is applied at index time, so the
-   inverted index, bloom filters and peer-side re-tokenization all agree. When
-   exact terms match nothing, a **bounded prefix scan** over the index terms
+   inverted index, bloom filters and peer-side re-tokenization all agree. The
+   **query-key map** then expands the terms: a small thesaurus covers synonyms
+   and question phrasing ("fixing" → also `repair`), and a learned
+   `term → clicked-keyword` co-occurrence map (`qk` store, fed by result
+   clicks) adds the keywords that previously led to useful results. When exact
+   terms still match nothing, a **bounded prefix scan** over the index terms
    catches partial/type-ahead queries ("sourdou" → "sourdough"). Compute the
    set of trusted peers (distance ≤ `maxHops`, deduped, never queried twice per
    queryId) whose `filter_self` matches any term.
