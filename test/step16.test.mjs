@@ -6,8 +6,16 @@ globalThis.localStorage = { getItem: () => null, setItem: () => {}, removeItem: 
 
 // --- Simulate the page the content script runs in ---------------------------
 const sent = [];
+let sendThrows = false; // simulate "Extension context invalidated" (sync throw)
 globalThis.chrome = {
-  runtime: { sendMessage: (msg) => { sent.push(msg); return Promise.resolve(); } }
+  runtime: {
+    id: 'test-extension',
+    sendMessage: (msg) => {
+      if (sendThrows) throw new Error('Extension context invalidated.');
+      sent.push(msg);
+      return Promise.resolve();
+    }
+  }
 };
 
 let currentUrl = 'https://www.youtube.com/watch?v=abc123';
@@ -86,6 +94,20 @@ test('polling fallback catches URL changes the history hook misses', async () =>
   assert.equal(sent.length, before + 1, 'the poll detected the un-hooked navigation');
   assert.equal(msg.page.url, 'https://www.youtube.com/watch?v=ghi789');
   assert.equal(msg.page.title, 'Sourdough FAQ');
+});
+
+test('survives extension context invalidation (extension reloaded)', async () => {
+  const before = sent.length;
+  sendThrows = true; // the extension was reloaded/updated while this tab stayed open
+  currentUrl = 'https://www.youtube.com/watch?v=jkl012';
+  currentTitle = 'Sourdough Storage';
+  currentBody = ('sourdough storage bread box ').repeat(15) + ' kept fresh crust ';
+
+  globalThis.history.pushState(); // would schedule a capture...
+  await new Promise(r => setTimeout(r, 1000)); // ...which must fail silently now
+
+  sendThrows = false;
+  assert.equal(sent.length, before, 'no message is sent once the context is dead');
 });
 
 test('auto-index respects the autoIndex setting', async () => {

@@ -33,13 +33,40 @@ let lastCaptured = '';
 let lastSeenUrl = location.href;
 let settleTimer = null;
 let retryTimer = null;
+let pollTimer = null;
+let dead = false; // extension reloaded/updated: this page's messaging context is gone
+
+// The extension context is gone (extension reloaded/updated while this tab
+// stayed open): stop every timer so this zombie script does nothing more.
+function markDead() {
+  if (dead) return;
+  dead = true;
+  if (pollTimer) clearInterval(pollTimer);
+  if (settleTimer) clearTimeout(settleTimer);
+  if (retryTimer) clearTimeout(retryTimer);
+}
 
 function send(page) {
+  if (dead) return;
   lastCaptured = page.url;
-  api.runtime.sendMessage({ action: 'autoIndex', page }).catch(() => {});
+  try {
+    // `chrome.runtime.id` is undefined once the context is invalidated; check
+    // it first so we never call into a dead context.
+    if (!api.runtime || !api.runtime.id) {
+      markDead();
+      return;
+    }
+    api.runtime.sendMessage({ action: 'autoIndex', page }).catch(() => markDead());
+  } catch {
+    // chrome.runtime throws synchronously ("Extension context invalidated")
+    // after the extension is reloaded/updated while this tab stayed open. The
+    // fresh content script will take over on the next page load.
+    markDead();
+  }
 }
 
 function capture() {
+  if (dead) return;
   let page;
   try {
     page = readPageInfo();
@@ -95,9 +122,11 @@ window.addEventListener('hashchange', onUrlChange);
 
 // Fallback: detect URL changes we couldn't hook, plus a fast check when the
 // tab becomes visible again (navigation may have happened in the background).
-setInterval(() => {
+pollTimer = setInterval(() => {
+  if (dead) return;
   if (location.href !== lastSeenUrl) onUrlChange();
 }, 1000);
 document.addEventListener('visibilitychange', () => {
+  if (dead) return;
   if (document.visibilityState === 'visible' && location.href !== lastSeenUrl) onUrlChange();
 });
