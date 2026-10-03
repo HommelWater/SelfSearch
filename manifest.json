@@ -1,0 +1,41 @@
+{
+  "manifest_version": 3,
+  "name": "SelfSearch",
+  "version": "1.3.2",
+  "description": "Personal P2P search engine. Index pages you visit, search them locally, and share with a trusted network.",
+  "permissions": ["activeTab", "offscreen", "alarms", "scripting"],
+  "host_permissions": [],
+  "commands": {
+    "open-search": {
+      "suggested_key": { "default": "Alt+Shift+S" },
+      "description": "Open SelfSearch"
+    }
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module",
+    "scripts": ["background.js"]
+  },
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "SelfSearch — index this page"
+  },
+  "omnibox": {
+    "keyword": "ss"
+  },
+  "icons": {
+    "96": "icon96.png",
+    "128": "icon128pad.png"
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "hommelwater@gmail.com"
+    }
+  }
+}

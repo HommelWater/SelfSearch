@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>SelfSearch</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; border-radius: 0px;}
+    body {
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      background: #CADCAE;
+      color: black;
+      padding: 24px;
+      max-width: 860px;
+      margin: 0 auto;
+    }
+    header h1 {
+      font-size: 1.6rem;
+      border-left: 3px solid #EDA35A;
+      padding-left: 12px;
+      margin-bottom: 12px;
+    }
+    .tabs { display: flex; gap: 8px; margin-bottom: 20px; }
+    .tabs .tab {
+      padding: 8px 16px;
+      border: 1px solid #222;
+      background: #E1E9C9;
+      cursor: pointer;
+      font-weight: 600;
+      font-family: inherit;
+      color: inherit;
+      appearance: none;
+      -webkit-appearance: none;
+      -moz-appearance: none;
+    }
+    .tabs .tab.active { background: #EDA35A; }
+    .tabs .tab::-moz-focus-inner { border: 0; padding: 0; }
+    .search-row { display: flex; gap: 8px; margin-bottom: 20px; }
+    #query {
+      flex: 1;
+      padding: 12px;
+      font-size: 1rem;
+      border: 1px solid #222;
+      background: #E1E9C9;
+      font-family: inherit;
+      color: inherit;
+      appearance: none;
+      -webkit-appearance: none;
+      -moz-appearance: none;
+    }
+    #go {
+      padding: 12px 20px;
+      border: 1px solid #222;
+      background: #EDA35A;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: inherit;
+      color: inherit;
+      appearance: none;
+      -webkit-appearance: none;
+      -moz-appearance: none;
+    }
+    #go::-moz-focus-inner { border: 0; padding: 0; }
+    #meta { font-size: 0.8rem; color: #2c3e2f; margin-bottom: 16px; }
+    .result {
+      background: #E1E9C9;
+      border-left: 3px solid #EDA35A;
+      padding: 12px 14px;
+      margin-bottom: 12px;
+    }
+    .result h3 { font-size: 1rem; margin-bottom: 4px; }
+    .result h3 a { color: #1a3c1d; text-decoration: none; }
+    .result h3 a:hover { text-decoration: underline; }
+    .result .url { font-size: 0.75rem; color: #4a6b4f; word-break: break-all; margin-bottom: 6px; }
+    .result .desc { font-size: 0.85rem; margin-bottom: 6px; }
+    .result .foot { font-size: 0.7rem; color: #4a6b4f; display: flex; justify-content: space-between; }
+    .result .kw { font-size: 0.7rem; color: #2c3e2f; margin-bottom: 6px; }
+    .del { background: none; border: none; color: #c62828; cursor: pointer; font-size: 0.75rem; }
+    .empty { padding: 24px; text-align: center; color: #2c3e2f; }
+    .cached { color: #1565c0; font-weight: 600; }
+    .local { color: #2e7d32; font-weight: 600; }
+    h3 { font-size: 0.95rem; margin: 20px 0 8px; border-left: 3px solid #EDA35A; padding-left: 8px; }
+    label { display: block; font-weight: 600; font-size: 0.75rem; text-transform: uppercase; margin-bottom: 6px; }
+    input:not([type="checkbox"]):not([type="radio"]), button {
+      padding: 8px;
+      margin: 4px 0;
+      border: 1px solid #222;
+      background: #E1E9C9;
+      font-size: 0.85rem;
+      font-family: inherit;
+      color: inherit;
+      appearance: none;
+      -webkit-appearance: none;
+      -moz-appearance: none;
+    }
+    input:not([type="checkbox"]):not([type="radio"]) { width: 100%; }
+    button { background: #EDA35A; cursor: pointer; font-weight: 500; }
+    button::-moz-focus-inner { border: 0; padding: 0; }
+    button.secondary { background: #E1E9C9; }
+    .search-row select {
+      width: auto;
+      margin: 4px 0;
+      padding: 12px;
+      border: 1px solid #222;
+      background: #E1E9C9;
+      font-size: 1rem;
+      font-family: inherit;
+      color: inherit;
+    }
+    .pager { display: flex; gap: 8px; align-items: center; margin-top: 14px; }
+    .pager button { width: auto; padding: 6px 12px; margin: 0; }
+    .pager button:disabled { opacity: 0.4; cursor: default; }
+    .pager .pager-info { font-size: 0.75rem; color: #2c3e2f; }
+    .server-row { display: flex; gap: 8px; align-items: center; margin: 4px 0; }
+    .server-row input { flex: 1; margin: 0; }
+    .server-row button { width: auto; padding: 8px 14px; margin: 0; }
+    .friend-row { display: flex; gap: 8px; align-items: center; margin: 4px 0; }
+    .friend-row .f-npub { flex: 1; font-size: 0.7rem; word-break: break-all; color: #2c3e2f; }
+    .friend-row .dot { width: 8px; height: 8px; border-radius: 50%; background: #999; flex: none; }
+    .friend-row .dot.on { background: #2e7d32; }
+    .friend-row button { width: auto; padding: 4px 8px; margin: 0; font-size: 0.7rem; }
+    .friend-link {
+      flex: 1;
+      text-align: left;
+      border: 1px solid #222;
+      background: #E1E9C9;
+      padding: 6px 10px;
+      margin: 0;
+      cursor: pointer;
+      font-weight: 700;
+      font-size: 0.85rem;
+      font-family: inherit;
+      color: inherit;
+      appearance: none;
+      -webkit-appearance: none;
+      -moz-appearance: none;
+    }
+    .friend-link:hover { background: #FEE8D9; }
+    .friend-link::-moz-focus-inner { border: 0; padding: 0; }
+    .friend-link .fa { margin-right: 6px; }
+    .friend-link .fsub { display: block; font-size: 0.65rem; color: #4a6b4f; font-weight: normal; }
+    #peerDetailBack { margin-bottom: 12px; }
+    .peer-card { background: #E1E9C9; border-left: 3px solid #EDA35A; padding: 12px 14px; margin-bottom: 14px; }
+    .peer-card .head { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+    .peer-card .avatar { font-size: 1.6rem; }
+    .peer-card .who { font-weight: 600; }
+    .peer-card .who small { font-weight: normal; color: #4a6b4f; }
+    .peer-card .bio { font-size: 0.8rem; color: #2c3e2f; margin-bottom: 8px; }
+    .peer-card .doc { padding: 4px 0; border-top: 1px solid #cfd8c3; }
+    .peer-card .doc a { color: #1a3c1d; text-decoration: none; font-weight: 500; }
+    .peer-card .doc .durl { font-size: 0.7rem; color: #4a6b4f; word-break: break-all; }
+    .peer-card .doc .dts { font-size: 0.65rem; color: #4a6b4f; }
+    .status { margin-top: 10px; padding: 6px 10px; font-size: 0.75rem; border-left: 3px solid transparent; }
+    .success { background: #d1e7c5; border-left-color: #2e7d32; }
+    .error { background: #ffe0e0; border-left-color: #c62828; }
+    .info { background: #e3f2fd; border-left-color: #1565c0; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>🔍 SelfSearch</h1>
+    <nav class="tabs">
+      <button class="tab active" data-tab="search">Search</button>
+      <button class="tab" data-tab="peers">Peers</button>
+      <button class="tab" data-tab="profile">Profile</button>
+    </nav>
+  </header>
+
+  <section id="tab-search" class="tab-body">
+    <label style="display:flex; align-items:center; gap:8px; margin-bottom:16px;">
+      <input type="checkbox" id="autoIndexCheckbox">
+      <span style="font-weight:normal; text-transform:none;">Auto-index visited pages
+        <small style="color:#2c3e2f;">&nbsp;— indexes each page as you visit it; repeated visits keep only stable keywords</small>
+      </span>
+    </label>
+    <div class="search-row">
+      <input id="query" type="text" placeholder="Search your index..." autofocus>
+      <button id="go">Search</button>
+      <select id="pageSize" title="Results per page">
+        <option value="10">10 / page</option>
+        <option value="20" selected>20 / page</option>
+        <option value="50">50 / page</option>
+      </select>
+    </div>
+    <div id="meta"></div>
+    <div id="results"></div>
+    <div id="pager" class="pager"></div>
+  </section>
+
+  <section id="tab-peers" class="tab-body" style="display:none">
+    <div id="peersMain">
+      <div id="peerStatus" class="status info"></div>
+      <h3>Your ID</h3>
+      <input id="npubDisplay" type="text" readonly>
+      <h3>Invite a friend</h3>
+      <div class="server-row">
+        <input id="inviteInput" type="text" placeholder="npub1..." autocomplete="off">
+        <button id="inviteBtn">Invite</button>
+      </div>
+      <div id="inviteMsg" class="status"></div>
+      <p class="status info" style="font-size:0.75rem; margin-top:6px;">
+        Adding a friend connects your devices directly (WebRTC). That peer sees
+        your IP address, which reveals your approximate location — and you see
+        theirs. Only add people you trust.
+      </p>
+      <h3>Pending invites</h3>
+      <div id="invitesList"></div>
+      <h3>Friends</h3>
+      <div id="friendsList"></div>
+      <h3>Recently indexed by peers</h3>
+      <div id="peerFeed"></div>
+    </div>
+    <div id="peerDetail" style="display:none">
+      <button id="peerDetailBack" class="secondary">← Back to peers</button>
+      <div id="peerDetailContent"></div>
+    </div>
+  </section>
+
+  <section id="tab-profile" class="tab-body" style="display:none">
+    <h3>Your profile</h3>
+    <label>Name</label>
+    <input id="profileName" type="text" placeholder="Your name or handle" maxlength="40">
+    <label>Avatar (emoji)</label>
+    <input id="profileAvatar" type="text" maxlength="4">
+    <label>Bio</label>
+    <input id="profileBio" type="text" maxlength="200">
+    <button id="saveProfileBtn">Save profile</button>
+    <div id="profileStatus" class="status"></div>
+
+    <h3>Sync across devices</h3>
+    <label>Your identity (npub)</label>
+    <input id="identityNpub" type="text" readonly>
+    <label>nsec <span style="font-weight:normal; text-transform:none;">(the key that IS this identity — keep it secret)</span></label>
+    <div class="server-row">
+      <input id="identityNsecDisplay" type="password" readonly placeholder="••••••••" autocomplete="off">
+      <button id="revealNsecBtn" class="secondary">Show</button>
+      <button id="copyNsecBtn" class="secondary">Copy</button>
+    </div>
+    <label>Enter nsec <span style="font-weight:normal; text-transform:none;">(same nsec on each device to sync)</span></label>
+    <input id="identityNsec" type="password" placeholder="64 hex characters" autocomplete="off">
+    <button id="setIdentityBtn">Save identity &amp; sync</button>
+    <label style="display:flex; align-items:center; gap:8px; margin:8px 0;">
+      <input type="checkbox" id="syncDevicesCheckbox">
+      <span style="font-weight:normal; text-transform:none;">Sync with my other devices</span>
+    </label>
+    <button id="syncNowBtn" class="secondary">Sync now</button>
+    <div id="syncStatus" class="status"></div>
+  </section>
+
+  <script type="module" src="search.js"></script>
+</body>
+</html>
